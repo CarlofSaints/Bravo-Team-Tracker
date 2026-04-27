@@ -14,9 +14,10 @@ interface RegionRow { id: string; name: string }
 interface PerigeeResult { code: string; name: string; channel: string; province: string }
 
 /* ───── Drop Zone ───── */
-function DropZone({ title, description, accept, uploading, message, messageType, onFile }: {
+function DropZone({ title, description, accept, uploading, message, messageType, statusLine, onFile }: {
   title: string; description: string; accept: string;
   uploading: boolean; message: string; messageType: 'success' | 'error' | '';
+  statusLine?: string;
   onFile: (f: File) => void;
 }) {
   const [dragging, setDragging] = useState(false);
@@ -52,6 +53,12 @@ function DropZone({ title, description, accept, uploading, message, messageType,
         <div className="text-sm font-semibold text-[var(--color-navy)]">{title}</div>
         <div className="text-xs text-gray-500">{description}</div>
         <div className="text-xs text-gray-400 mt-1">Drag & drop or click to browse</div>
+        {statusLine && !uploading && !message && (
+          <div className="text-[10px] text-green-600 mt-1 flex items-center gap-1">
+            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+            {statusLine}
+          </div>
+        )}
         {uploading && <div className="text-xs text-blue-600 font-medium mt-1">Uploading...</div>}
         {message && (
           <div className={`text-xs mt-1 font-medium ${messageType === 'error' ? 'text-red-600' : 'text-green-600'}`}>{message}</div>
@@ -69,28 +76,46 @@ function PerigeeSearchModal({ storeName, onSelect, onClose, onEmailSupport }: {
   onEmailSupport: (storeName: string) => void;
 }) {
   const [query, setQuery] = useState(storeName);
+  const [channel, setChannel] = useState('');
+  const [channels, setChannels] = useState<string[]>([]);
   const [results, setResults] = useState<PerigeeResult[]>([]);
   const [total, setTotal] = useState(0);
+  const [matchCount, setMatchCount] = useState(0);
   const [searching, setSearching] = useState(false);
   const [searched, setSearched] = useState(false);
 
-  const doSearch = useCallback(async (q: string) => {
-    if (!q.trim()) { setResults([]); setSearched(false); return; }
+  // Fetch channels on mount
+  useEffect(() => {
+    authFetch('/api/perigee-stores', { cache: 'no-store' })
+      .then(r => r.json())
+      .then(d => {
+        setChannels(d.channels || []);
+        setTotal(d.total || 0);
+      })
+      .catch(() => {});
+  }, []);
+
+  const doSearch = useCallback(async (q: string, ch: string) => {
+    if (!q.trim() && !ch) { setResults([]); setSearched(false); return; }
     setSearching(true);
     try {
-      const res = await authFetch(`/api/perigee-stores?q=${encodeURIComponent(q.trim())}`, { cache: 'no-store' });
+      const params = new URLSearchParams();
+      if (q.trim()) params.set('q', q.trim());
+      if (ch) params.set('channel', ch);
+      const res = await authFetch(`/api/perigee-stores?${params}`, { cache: 'no-store' });
       const data = await res.json();
       setResults(data.stores || []);
       setTotal(data.total || 0);
+      setMatchCount(data.matchCount || 0);
       setSearched(true);
     } catch { setResults([]); }
     finally { setSearching(false); }
   }, []);
 
   useEffect(() => {
-    const t = setTimeout(() => doSearch(query), 300);
+    const t = setTimeout(() => doSearch(query, channel), 300);
     return () => clearTimeout(t);
-  }, [query, doSearch]);
+  }, [query, channel, doSearch]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
@@ -103,15 +128,28 @@ function PerigeeSearchModal({ storeName, onSelect, onClose, onEmailSupport }: {
             </button>
           </div>
           <div className="text-xs text-gray-500 mb-2">Mapping: <span className="font-medium text-gray-700">{storeName}</span></div>
-          <input
-            type="text"
-            value={query}
-            onChange={e => setQuery(e.target.value)}
-            placeholder="Search Perigee stores by name or code..."
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-navy)]/30"
-            autoFocus
-          />
-          {total > 0 && <div className="text-[10px] text-gray-400 mt-1">{total.toLocaleString()} Perigee stores loaded</div>}
+          <div className="flex gap-2 mb-2">
+            <input
+              type="text"
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              placeholder="Search by name or code..."
+              className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-navy)]/30"
+              autoFocus
+            />
+            <select
+              value={channel}
+              onChange={e => setChannel(e.target.value)}
+              className="px-2 py-2 border border-gray-300 rounded-lg text-sm bg-white min-w-[140px]"
+            >
+              <option value="">All Channels</option>
+              {channels.map(ch => <option key={ch} value={ch}>{ch}</option>)}
+            </select>
+          </div>
+          <div className="flex items-center justify-between">
+            {total > 0 && <div className="text-[10px] text-gray-400">{total.toLocaleString()} Perigee stores loaded</div>}
+            {searched && matchCount > 50 && <div className="text-[10px] text-gray-400">{matchCount} matches — showing first 50</div>}
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto p-2 min-h-[200px]">
@@ -177,6 +215,9 @@ export default function StoresPage() {
   const [bravoMsg, setBravoMsg] = useState('');
   const [bravoMsgType, setBravoMsgType] = useState<'success' | 'error' | ''>('');
 
+  // Perigee reference status
+  const [perigeeRefCount, setPerigeeRefCount] = useState(0);
+
   // Mapping modal
   const [mappingStore, setMappingStore] = useState<StoreRow | null>(null);
   const [savingMatch, setSavingMatch] = useState(false);
@@ -197,10 +238,18 @@ export default function StoresPage() {
     }).catch(() => setFetching(false));
   }, []);
 
+  const fetchPerigeeCount = useCallback(() => {
+    authFetch('/api/perigee-stores', { cache: 'no-store' })
+      .then(r => r.json())
+      .then(d => setPerigeeRefCount(d.total || 0))
+      .catch(() => {});
+  }, []);
+
   useEffect(() => {
     if (!session) return;
     reload();
-  }, [session, reload]);
+    fetchPerigeeCount();
+  }, [session, reload, fetchPerigeeCount]);
 
   // Score
   const totalStores = stores.length;
@@ -301,6 +350,7 @@ export default function StoresPage() {
       else {
         setPerigeeMsg(`${data.totalStores.toLocaleString()} active Perigee stores loaded`);
         setPerigeeMsgType('success');
+        setPerigeeRefCount(data.totalStores);
       }
     } catch (err) {
       console.error('Perigee upload error:', err);
@@ -420,6 +470,7 @@ export default function StoresPage() {
                 uploading={perigeeUploading}
                 message={perigeeMsg}
                 messageType={perigeeMsgType}
+                statusLine={perigeeRefCount > 0 ? `${perigeeRefCount.toLocaleString()} stores loaded` : undefined}
                 onFile={handlePerigeeUpload}
               />
               <DropZone

@@ -10,15 +10,38 @@ export async function GET(req: Request) {
 
   const url = new URL(req.url);
   const q = (url.searchParams.get('q') || '').trim().toLowerCase();
+  const channel = (url.searchParams.get('channel') || '').trim();
   const stores = await loadPerigeeStores();
 
-  if (!q) {
-    return NextResponse.json({ total: stores.length, stores: [] }, { headers: noCacheHeaders() });
+  // Build unique channel list
+  const channelSet = new Set<string>();
+  for (const s of stores) {
+    if (s.channel) channelSet.add(s.channel);
+  }
+  const channels = [...channelSet].sort();
+
+  if (!q && !channel) {
+    return NextResponse.json({ total: stores.length, channels, stores: [] }, { headers: noCacheHeaders() });
   }
 
-  const results = stores.filter(s =>
-    s.name.toLowerCase().includes(q) || s.code.toLowerCase().includes(q)
-  ).slice(0, 50);
+  let filtered = stores;
 
-  return NextResponse.json({ total: stores.length, stores: results }, { headers: noCacheHeaders() });
+  // Filter by channel first
+  if (channel) {
+    filtered = filtered.filter(s => s.channel === channel);
+  }
+
+  // Then by search query
+  if (q) {
+    filtered = filtered.filter(s =>
+      s.name.toLowerCase().includes(q) || s.code.toLowerCase().includes(q)
+    );
+  }
+
+  return NextResponse.json({
+    total: stores.length,
+    channels,
+    stores: filtered.slice(0, 50),
+    matchCount: filtered.length,
+  }, { headers: noCacheHeaders() });
 }
