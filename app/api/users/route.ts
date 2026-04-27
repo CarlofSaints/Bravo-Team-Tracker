@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import { loadUsers, saveUsers, User } from '@/lib/userData';
 import { loadTeams, saveTeams } from '@/lib/teamData';
 import { requireAdmin, noCacheHeaders } from '@/lib/auth';
+import { sendWelcomeEmail } from '@/lib/email';
 
 export const dynamic = 'force-dynamic';
 
@@ -57,6 +58,16 @@ export async function POST(req: Request) {
         team.members.push(newUser.id);
         await saveTeams(teams);
       }
+    }
+
+    // Send welcome email (non-blocking — don't fail user creation if email fails)
+    if (newUser.email) {
+      sendWelcomeEmail({
+        to: newUser.email,
+        name: newUser.name,
+        username: newUser.username,
+        password,
+      }).catch(err => console.error('Welcome email failed:', err));
     }
 
     const { password: _pw, ...safe } = newUser;
