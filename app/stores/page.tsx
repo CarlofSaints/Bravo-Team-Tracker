@@ -497,8 +497,8 @@ export default function StoresPage() {
             <h2 className="text-sm font-bold text-[var(--color-navy)] mb-3">Data Uploads</h2>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <DropZone
-                title="Initial Matched List"
-                description="Upload the Bravo Master Store Match file with pre-matched Perigee codes"
+                title="Bravo + Perigee Store Matcher"
+                description="Upload the master store match file with pre-matched Perigee codes"
                 accept=".xlsx,.xls"
                 uploading={matchUploading}
                 message={matchMsg}
