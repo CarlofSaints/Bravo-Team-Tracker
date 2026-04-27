@@ -14,11 +14,14 @@ interface RegionRow { id: string; name: string }
 interface PerigeeResult { code: string; name: string; channel: string; province: string }
 
 /* ───── Drop Zone ───── */
-function DropZone({ title, description, accept, uploading, message, messageType, statusLine, onFile }: {
+function DropZone({ title, description, accept, uploading, message, messageType, statusLine, onFile, onExportTemplate, onExportCurrent, hasData }: {
   title: string; description: string; accept: string;
   uploading: boolean; message: string; messageType: 'success' | 'error' | '';
   statusLine?: string;
   onFile: (f: File) => void;
+  onExportTemplate?: () => void;
+  onExportCurrent?: () => void;
+  hasData?: boolean;
 }) {
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -36,34 +39,58 @@ function DropZone({ title, description, accept, uploading, message, messageType,
   }
 
   return (
-    <div
-      className={`relative rounded-xl border-2 border-dashed p-5 transition-colors cursor-pointer ${
-        dragging ? 'border-[var(--color-navy)] bg-blue-50/50' : 'border-gray-300 bg-white hover:border-gray-400'
-      } ${uploading ? 'opacity-60 pointer-events-none' : ''}`}
-      onDragOver={e => { e.preventDefault(); setDragging(true); }}
-      onDragLeave={() => setDragging(false)}
-      onDrop={handleDrop}
-      onClick={() => inputRef.current?.click()}
-    >
-      <input ref={inputRef} type="file" accept={accept} onChange={handleChange} className="hidden" />
-      <div className="flex flex-col items-center text-center gap-2">
-        <svg className="w-8 h-8 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
-        </svg>
-        <div className="text-sm font-semibold text-[var(--color-navy)]">{title}</div>
-        <div className="text-xs text-gray-500">{description}</div>
-        <div className="text-xs text-gray-400 mt-1">Drag & drop or click to browse</div>
-        {statusLine && !uploading && !message && (
-          <div className="text-[10px] text-green-600 mt-1 flex items-center gap-1">
-            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
-            {statusLine}
-          </div>
-        )}
-        {uploading && <div className="text-xs text-blue-600 font-medium mt-1">Uploading...</div>}
-        {message && (
-          <div className={`text-xs mt-1 font-medium ${messageType === 'error' ? 'text-red-600' : 'text-green-600'}`}>{message}</div>
-        )}
+    <div className="flex flex-col">
+      <div
+        className={`relative rounded-xl border-2 border-dashed p-5 transition-colors cursor-pointer flex-1 ${
+          dragging ? 'border-[var(--color-navy)] bg-blue-50/50' : 'border-gray-300 bg-white hover:border-gray-400'
+        } ${uploading ? 'opacity-60 pointer-events-none' : ''}`}
+        onDragOver={e => { e.preventDefault(); setDragging(true); }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={handleDrop}
+        onClick={() => inputRef.current?.click()}
+      >
+        <input ref={inputRef} type="file" accept={accept} onChange={handleChange} className="hidden" />
+        <div className="flex flex-col items-center text-center gap-2">
+          <svg className="w-8 h-8 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+          </svg>
+          <div className="text-sm font-semibold text-[var(--color-navy)]">{title}</div>
+          <div className="text-xs text-gray-500">{description}</div>
+          <div className="text-xs text-gray-400 mt-1">Drag & drop or click to browse</div>
+          {statusLine && !uploading && !message && (
+            <div className="text-[10px] text-green-600 mt-1 flex items-center gap-1">
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+              {statusLine}
+            </div>
+          )}
+          {uploading && <div className="text-xs text-blue-600 font-medium mt-1">Uploading...</div>}
+          {message && (
+            <div className={`text-xs mt-1 font-medium ${messageType === 'error' ? 'text-red-600' : 'text-green-600'}`}>{message}</div>
+          )}
+        </div>
       </div>
+      {(onExportTemplate || onExportCurrent) && (
+        <div className="flex gap-2 mt-2">
+          {onExportTemplate && (
+            <button
+              onClick={onExportTemplate}
+              className="flex-1 text-[11px] text-gray-500 hover:text-[var(--color-navy)] bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg py-1.5 px-2 transition-colors flex items-center justify-center gap-1"
+            >
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
+              Template
+            </button>
+          )}
+          {onExportCurrent && hasData && (
+            <button
+              onClick={onExportCurrent}
+              className="flex-1 text-[11px] text-gray-500 hover:text-[var(--color-navy)] bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg py-1.5 px-2 transition-colors flex items-center justify-center gap-1"
+            >
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
+              Export Current
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -392,6 +419,21 @@ export default function StoresPage() {
     finally { setSavingMatch(false); }
   }
 
+  // Export helpers — authFetch for header-based auth, then trigger download
+  async function downloadFile(url: string) {
+    const res = await authFetch(url, { cache: 'no-store' });
+    if (!res.ok) return;
+    const blob = await res.blob();
+    const disposition = res.headers.get('Content-Disposition') || '';
+    const match = disposition.match(/filename="?([^"]+)"?/);
+    const filename = match?.[1] || 'export.xlsx';
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
   function handleEmailSupport(storeName: string) {
     const subject = encodeURIComponent(`Store not found in Perigee: ${storeName}`);
     const body = encodeURIComponent(
@@ -461,7 +503,11 @@ export default function StoresPage() {
                 uploading={matchUploading}
                 message={matchMsg}
                 messageType={matchMsgType}
+                statusLine={totalStores > 0 ? `${totalStores.toLocaleString()} stores loaded` : undefined}
                 onFile={handleMatchUpload}
+                onExportTemplate={() => downloadFile('/api/stores/export?type=template-matched')}
+                onExportCurrent={() => downloadFile('/api/stores/export?type=current-matched')}
+                hasData={totalStores > 0}
               />
               <DropZone
                 title="Perigee Store Reference"
@@ -472,6 +518,9 @@ export default function StoresPage() {
                 messageType={perigeeMsgType}
                 statusLine={perigeeRefCount > 0 ? `${perigeeRefCount.toLocaleString()} stores loaded` : undefined}
                 onFile={handlePerigeeUpload}
+                onExportTemplate={() => downloadFile('/api/perigee-stores/export?type=template')}
+                onExportCurrent={() => downloadFile('/api/perigee-stores/export?type=current')}
+                hasData={perigeeRefCount > 0}
               />
               <DropZone
                 title="Bravo Store List"
@@ -480,7 +529,11 @@ export default function StoresPage() {
                 uploading={bravoUploading}
                 message={bravoMsg}
                 messageType={bravoMsgType}
+                statusLine={totalStores > 0 ? `${totalStores.toLocaleString()} stores loaded` : undefined}
                 onFile={handleBravoUpload}
+                onExportTemplate={() => downloadFile('/api/stores/export?type=template-bravo')}
+                onExportCurrent={() => downloadFile('/api/stores/export?type=current-bravo')}
+                hasData={totalStores > 0}
               />
             </div>
           </div>
