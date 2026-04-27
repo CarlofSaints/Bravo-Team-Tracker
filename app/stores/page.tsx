@@ -261,17 +261,51 @@ export default function StoresPage() {
   }
 
   async function handlePerigeeUpload(file: File) {
-    setPerigeeUploading(true); setPerigeeMsg(''); setPerigeeMsgType('');
+    setPerigeeUploading(true); setPerigeeMsg('Parsing file in browser...'); setPerigeeMsgType('');
     try {
-      const fd = new FormData(); fd.append('file', file);
-      const res = await authFetch('/api/perigee-stores/upload', { method: 'POST', body: fd });
+      // Parse Excel client-side to avoid sending huge file to server
+      const XLSX = await import('xlsx');
+      const buffer = await file.arrayBuffer();
+      const wb = XLSX.read(buffer, { type: 'array' });
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '' });
+
+      // Extract + filter
+      const stores: { code: string; name: string; channel: string; province: string }[] = [];
+      for (const row of rows) {
+        const code = String(row['Store Code'] || row['store_code'] || '').trim();
+        const name = String(row['Store Name'] || row['store_name'] || '').trim();
+        const channel = String(row['Channel'] || row['channel'] || '').trim();
+        const province = String(row['Province'] || row['province'] || '').trim();
+        const active = String(row['Active'] || row['active'] || 'YES').trim().toUpperCase();
+        if (!code || !name || active !== 'YES') continue;
+        stores.push({ code, name, channel, province });
+      }
+
+      setPerigeeMsg(`Uploading ${stores.length.toLocaleString()} stores...`);
+
+      // Gzip the JSON payload using Compression Streams API
+      const json = JSON.stringify({ stores });
+      const blob = new Blob([json]);
+      const cs = new CompressionStream('gzip');
+      const compressedStream = blob.stream().pipeThrough(cs);
+      const compressedBlob = await new Response(compressedStream).blob();
+
+      const res = await authFetch('/api/perigee-stores/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/gzip' },
+        body: compressedBlob,
+      });
       const data = await res.json();
       if (!res.ok) { setPerigeeMsg(data.error || 'Upload failed'); setPerigeeMsgType('error'); }
       else {
         setPerigeeMsg(`${data.totalStores.toLocaleString()} active Perigee stores loaded`);
         setPerigeeMsgType('success');
       }
-    } catch { setPerigeeMsg('Connection error'); setPerigeeMsgType('error'); }
+    } catch (err) {
+      console.error('Perigee upload error:', err);
+      setPerigeeMsg('Failed to parse or upload file'); setPerigeeMsgType('error');
+    }
     finally { setPerigeeUploading(false); }
   }
 
