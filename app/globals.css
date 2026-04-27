@@ -1,0 +1,23 @@
+@import "tailwindcss";
+
+:root {
+  --color-navy: #091638;
+  --color-navy-light: #0f2255;
+  --color-accent: #d8dcef;
+  --color-accent-dark: #a8aed0;
+  --color-white: #ffffff;
+}
+
+body {
+  background: #f1f3f9;
+  color: #111827;
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+main.ml-64 {
+  transition: margin-left 200ms ease, padding-top 200ms ease;
+}
+body.sidebar-collapsed main.ml-64 {
+  margin-left: 0;
+  padding-top: 3.5rem;
+}
