@@ -66,8 +66,7 @@ export default function LeaderboardPage() {
       <main className="ml-64 p-6">
         <h1 className="text-2xl font-bold text-[var(--color-navy)] mb-6">Team Leaderboard</h1>
 
-        <div className="relative">
-          {/* Table */}
+        <div>
           <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
             {fetching ? (
               <div className="text-center text-gray-400 py-12">Loading teams...</div>
@@ -115,20 +114,20 @@ export default function LeaderboardPage() {
             )}
           </div>
 
-          {/* Frosted overlay */}
-          <div className="absolute inset-0 backdrop-blur-sm bg-white/60 rounded-xl flex flex-col items-center justify-center text-center p-8">
-            <div className="w-16 h-16 rounded-full bg-[var(--color-navy)]/10 flex items-center justify-center mb-4">
-              <svg className="w-8 h-8 text-[var(--color-navy)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+          {/* Pro upsell banner */}
+          <div className="mt-4 bg-gradient-to-r from-[var(--color-navy)] to-[var(--color-navy-light)] rounded-xl p-5 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3 text-white">
+              <svg className="w-6 h-6 text-amber-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
               </svg>
+              <div>
+                <div className="font-semibold text-sm">This is sample data</div>
+                <div className="text-white/70 text-xs">Upgrade to Pro for live scores updated automatically from field activity</div>
+              </div>
             </div>
-            <h2 className="text-xl font-bold text-[var(--color-navy)] mb-2">Unlock Team Leaderboard</h2>
-            <p className="text-gray-600 max-w-md mb-6">
-              See live team rankings, track points across visits, training, sales and promo compliance. Motivate your teams with real-time competition.
-            </p>
             <Link
               href="/pro"
-              className="px-6 py-3 bg-[var(--color-navy)] text-white rounded-lg font-semibold hover:bg-[var(--color-navy-light)] transition-colors"
+              className="px-5 py-2 bg-amber-400 text-[var(--color-navy)] rounded-lg text-sm font-bold hover:bg-amber-300 transition-colors flex-shrink-0"
             >
               Upgrade to Pro
             </Link>
