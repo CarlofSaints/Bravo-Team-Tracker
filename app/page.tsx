@@ -77,6 +77,10 @@ export default function DashboardPage() {
   const [clearingVisits, setClearingVisits] = useState(false);
   const visitInputRef = useRef<HTMLInputElement>(null);
 
+  // Pagination
+  const PAGE_SIZE = 400;
+  const [page, setPage] = useState(0);
+
   // Filters
   const [filterChannel, setFilterChannel] = useState('');
   const [filterTeam, setFilterTeam] = useState('');
@@ -149,6 +153,9 @@ export default function DashboardPage() {
     if (ch && area) return `${ch} ${area}`;
     return ch || area || s.name;
   }
+
+  // Reset page when filters change
+  useEffect(() => { setPage(0); }, [filterChannel, filterTeam, filterRegion, filterUser, search, sortCol, sortDir]);
 
   const filtered = useMemo(() => {
     return stores.filter(s => {
@@ -440,7 +447,7 @@ export default function DashboardPage() {
                   {sorted.length === 0 ? (
                     <tr><td colSpan={COLUMNS.length} className="px-3 py-8 text-center text-gray-400">No stores found</td></tr>
                   ) : (
-                    sorted.slice(0, 200).map(s => {
+                    sorted.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE).map(s => {
                       const isMapped = s.perigeeStoreCode !== 'Not Mapped';
                       const visitCount = isMapped ? (visitMap[s.perigeeStoreCode] || 0) : null;
                       const lastVisit = isMapped ? (lastVisitMap[s.perigeeStoreCode] || '') : '';
@@ -474,9 +481,33 @@ export default function DashboardPage() {
                 </tbody>
               </table>
             </div>
-            {sorted.length > 200 && (
-              <div className="px-3 py-2 text-xs text-gray-400 border-t">Showing 200 of {sorted.length} stores</div>
-            )}
+            {sorted.length > PAGE_SIZE && (() => {
+              const totalPages = Math.ceil(sorted.length / PAGE_SIZE);
+              const from = page * PAGE_SIZE + 1;
+              const to = Math.min((page + 1) * PAGE_SIZE, sorted.length);
+              return (
+                <div className="px-3 py-2 border-t border-gray-200 flex items-center justify-between">
+                  <div className="text-xs text-gray-400">Showing {from}–{to} of {sorted.length.toLocaleString()} stores</div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setPage(p => Math.max(0, p - 1))}
+                      disabled={page === 0}
+                      className="px-2.5 py-1 text-xs font-medium rounded border border-gray-300 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed"
+                    >
+                      Previous
+                    </button>
+                    <span className="text-xs text-gray-500">Page {page + 1} of {totalPages}</span>
+                    <button
+                      onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+                      disabled={page >= totalPages - 1}
+                      className="px-2.5 py-1 text-xs font-medium rounded border border-gray-300 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         )}
       </main>
