@@ -221,19 +221,24 @@ function PerigeeSearchModal({ storeName, onSelect, onClose, onEmailSupport }: {
             </div>
           )}
           {!searching && results.map(p => (
-            <button
+            <div
               key={p.code}
-              onClick={() => onSelect(p)}
-              className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-blue-50 transition-colors flex items-center justify-between gap-3 group"
+              className="w-full px-3 py-2.5 rounded-lg hover:bg-gray-50 transition-colors flex items-center justify-between gap-3"
             >
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <div className="text-sm font-medium text-gray-800 truncate">{p.name}</div>
                 <div className="text-xs text-gray-500">{p.channel}{p.province ? ` · ${p.province}` : ''}</div>
               </div>
-              <div className="flex-shrink-0 text-xs font-mono bg-gray-100 text-gray-600 px-2 py-1 rounded group-hover:bg-blue-100">
+              <div className="flex-shrink-0 text-xs font-mono bg-gray-100 text-gray-600 px-2 py-1 rounded">
                 {p.code}
               </div>
-            </button>
+              <button
+                onClick={() => onSelect(p)}
+                className="flex-shrink-0 px-3 py-1.5 bg-[var(--color-navy)] text-white text-xs rounded-md font-medium hover:opacity-90 transition-opacity"
+              >
+                Map
+              </button>
+            </div>
           ))}
         </div>
       </div>
@@ -489,6 +494,21 @@ export default function StoresPage() {
     finally { setSavingMatch(false); }
   }
 
+  // Unmap a store
+  async function handleUnmap(store: StoreRow) {
+    if (!confirm(`Unmap "${store.name}" from Perigee code ${store.perigeeStoreCode}?`)) return;
+    try {
+      await authFetch(`/api/stores/${store.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ perigeeStoreCode: 'Not Mapped', perigeeStoreName: '' }),
+      });
+      setStores(prev => prev.map(s => s.id === store.id ? {
+        ...s, perigeeStoreCode: 'Not Mapped', perigeeStoreName: '',
+      } : s));
+    } catch { /* ignore */ }
+  }
+
   // Export helpers — authFetch for header-based auth, then trigger download
   async function downloadFile(url: string) {
     const res = await authFetch(url, { cache: 'no-store' });
@@ -675,27 +695,38 @@ export default function StoresPage() {
                           </td>
                           <td className="px-3 py-2 text-gray-600 text-xs">{s.perigeeStoreName || '—'}</td>
                           <td className="px-3 py-2">
-                            {isJustMapped ? (
-                              <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-500 text-white text-xs rounded-md font-bold animate-pulse">
-                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
-                                MAPPED
-                              </span>
-                            ) : isUnmapped ? (
-                              <button
-                                onClick={() => setMappingStore(s)}
-                                className="px-2.5 py-1 bg-[var(--color-navy)] text-white text-xs rounded-md font-medium hover:bg-[var(--color-navy-light)] transition-colors"
-                              >
-                                Map
-                              </button>
-                            ) : (
-                              <button
-                                onClick={() => setMappingStore(s)}
-                                className="p-1 text-gray-400 hover:text-[var(--color-navy)]"
-                                title="Re-map"
-                              >
-                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125" /></svg>
-                              </button>
-                            )}
+                            <div className="flex items-center gap-1.5">
+                              {isJustMapped ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-500 text-white text-xs rounded-md font-bold animate-pulse">
+                                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                                  MAPPED
+                                </span>
+                              ) : isUnmapped ? (
+                                <button
+                                  onClick={() => setMappingStore(s)}
+                                  className="px-2.5 py-1 bg-[var(--color-navy)] text-white text-xs rounded-md font-medium hover:bg-[var(--color-navy-light)] transition-colors"
+                                >
+                                  Map
+                                </button>
+                              ) : (
+                                <>
+                                  <button
+                                    onClick={() => setMappingStore(s)}
+                                    className="p-1 text-gray-400 hover:text-[var(--color-navy)]"
+                                    title="Re-map"
+                                  >
+                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125" /></svg>
+                                  </button>
+                                  <button
+                                    onClick={() => handleUnmap(s)}
+                                    className="p-1 text-gray-400 hover:text-red-500"
+                                    title="Unmap"
+                                  >
+                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                                  </button>
+                                </>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       );
