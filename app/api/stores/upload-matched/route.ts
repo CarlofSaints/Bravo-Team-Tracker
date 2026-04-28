@@ -23,8 +23,9 @@ export async function POST(req: Request) {
     const channels = await loadChannels();
     const stores = await loadStores();
 
-    // Build a set of existing store names (lowercase) to avoid duplicates
-    const existingNames = new Set(stores.map(s => s.name.toLowerCase()));
+    // Build a set of existing store name+area keys (lowercase) to avoid duplicates
+    const storeKey = (name: string, area: string) => `${name.toLowerCase()}|||${area.toLowerCase()}`;
+    const existingKeys = new Set(stores.map(s => storeKey(s.name, s.area)));
 
     let addedStores = 0;
     let addedChannels = 0;
@@ -39,7 +40,7 @@ export async function POST(req: Request) {
 
       if (!storeName) continue;
 
-      if (existingNames.has(storeName.toLowerCase())) {
+      if (existingKeys.has(storeKey(storeName, area))) {
         skippedDuplicates++;
         continue;
       }
@@ -71,7 +72,7 @@ export async function POST(req: Request) {
         createdAt: new Date().toISOString(),
       };
       stores.push(newStore);
-      existingNames.add(storeName.toLowerCase());
+      existingKeys.add(storeKey(storeName, area));
       addedStores++;
     }
 

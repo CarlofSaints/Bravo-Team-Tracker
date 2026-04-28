@@ -12,6 +12,19 @@ export async function GET(req: Request) {
   return NextResponse.json(stores, { headers: noCacheHeaders() });
 }
 
+export async function DELETE(req: Request) {
+  const admin = await requireAdmin(req);
+  if (!admin) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+
+  try {
+    await saveStores([]);
+    return NextResponse.json({ success: true });
+  } catch (err) {
+    console.error('Clear stores error:', err);
+    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+  }
+}
+
 export async function POST(req: Request) {
   const admin = await requireAdmin(req);
   if (!admin) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });

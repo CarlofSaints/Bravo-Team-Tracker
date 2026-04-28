@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
-import { loadPerigeeStores } from '@/lib/perigeeStoreData';
-import { requireLogin, noCacheHeaders } from '@/lib/auth';
+import { loadPerigeeStores, savePerigeeStores } from '@/lib/perigeeStoreData';
+import { requireLogin, requireAdmin, noCacheHeaders } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -44,4 +44,17 @@ export async function GET(req: Request) {
     stores: filtered.slice(0, 50),
     matchCount: filtered.length,
   }, { headers: noCacheHeaders() });
+}
+
+export async function DELETE(req: Request) {
+  const admin = await requireAdmin(req);
+  if (!admin) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+
+  try {
+    await savePerigeeStores([]);
+    return NextResponse.json({ success: true });
+  } catch (err) {
+    console.error('Clear perigee stores error:', err);
+    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+  }
 }
