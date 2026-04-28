@@ -113,7 +113,7 @@ function PerigeeSearchModal({ storeName, storeArea, onSelect, onClose, onEmailSu
   storeArea: string;
   onSelect: (p: PerigeeResult) => void;
   onClose: () => void;
-  onEmailSupport: (storeName: string) => void;
+  onEmailSupport: (storeName: string, storeArea: string) => void;
 }) {
   const [query, setQuery] = useState(storeName);
   const [channel, setChannel] = useState('');
@@ -211,7 +211,7 @@ function PerigeeSearchModal({ storeName, storeArea, onSelect, onClose, onEmailSu
             <div className="text-center py-8">
               <div className="text-gray-400 text-sm mb-3">No matching Perigee stores found</div>
               <button
-                onClick={() => onEmailSupport(storeName)}
+                onClick={() => onEmailSupport(storeName, storeArea)}
                 className="inline-flex items-center gap-2 px-4 py-2 bg-amber-500 text-white rounded-lg text-sm font-medium hover:bg-amber-600 transition-colors"
               >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -633,10 +633,11 @@ export default function StoresPage() {
     URL.revokeObjectURL(a.href);
   }
 
-  function handleEmailSupport(storeName: string) {
-    const subject = encodeURIComponent(`Store not found in Perigee: ${storeName}`);
+  function handleEmailSupport(storeName: string, storeArea: string) {
+    const label = storeArea ? `${storeName} (${storeArea})` : storeName;
+    const subject = encodeURIComponent(`Store not found in Perigee: ${label}`);
     const body = encodeURIComponent(
-      `Hi Perigee Support,\n\nWe are unable to find the following store in the Perigee system and would like to request that it be added:\n\nStore Name: ${storeName}\n\nPlease let us know once this has been done.\n\nThank you`
+      `Hi Perigee Support,\n\nWe are unable to find the following store in the Perigee system and would like to request that it be added:\n\nStore Name: ${storeName}\nArea: ${storeArea || 'N/A'}\n\nPlease let us know once this has been done.\n\nThank you`
     );
     window.open(`mailto:support@perigeeapp.co.za?subject=${subject}&body=${body}`, '_blank');
   }
