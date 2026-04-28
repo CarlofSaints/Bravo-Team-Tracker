@@ -7,6 +7,7 @@ import Sidebar from '@/components/Sidebar';
 interface StoreRow {
   id: string; name: string; area: string; channelId: string; regionId: string;
   teamId: string; repUserId: string | null; perigeeStoreCode: string; perigeeStoreName: string;
+  supportEmailSent?: boolean;
 }
 interface ChannelRow { id: string; name: string }
 interface TeamRow { id: string; name: string }
@@ -591,11 +592,11 @@ export default function StoresPage() {
       await authFetch(`/api/stores/${mappingStore.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ perigeeStoreCode: p.code, perigeeStoreName: p.name }),
+        body: JSON.stringify({ perigeeStoreCode: p.code, perigeeStoreName: p.name, supportEmailSent: false }),
       });
       const mappedId = mappingStore.id;
       setStores(prev => prev.map(s => s.id === mappedId ? {
-        ...s, perigeeStoreCode: p.code, perigeeStoreName: p.name,
+        ...s, perigeeStoreCode: p.code, perigeeStoreName: p.name, supportEmailSent: false,
       } : s));
       const mappedName = `${mappingStore.name} → ${p.code}`;
       setMappingStore(null);
@@ -636,13 +637,25 @@ export default function StoresPage() {
     URL.revokeObjectURL(a.href);
   }
 
-  function handleEmailSupport(storeName: string, storeArea: string) {
+  async function handleEmailSupport(storeName: string, storeArea: string) {
     const label = storeArea ? `${storeName} (${storeArea})` : storeName;
     const subject = encodeURIComponent(`Store not found in Perigee: ${label}`);
     const body = encodeURIComponent(
       `Hi Perigee Support,\n\nWe are unable to find the following store in the Perigee system and would like to request that it be added:\n\nStore Name: ${storeName}\nArea: ${storeArea || 'N/A'}\n\nPlease let us know once this has been done.\n\nThank you`
     );
     window.open(`mailto:support@perigeeapp.co.za?subject=${subject}&body=${body}`, '_blank');
+
+    // Mark store as email sent
+    if (mappingStore) {
+      try {
+        await authFetch(`/api/stores/${mappingStore.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ supportEmailSent: true }),
+        });
+        setStores(prev => prev.map(s => s.id === mappingStore.id ? { ...s, supportEmailSent: true } : s));
+      } catch { /* best-effort */ }
+    }
   }
 
   if (loading || !session) {
@@ -812,15 +825,16 @@ export default function StoresPage() {
                   ) : (
                     sortedStores.slice(0, 300).map(s => {
                       const isUnmapped = s.perigeeStoreCode === 'Not Mapped';
+                      const isEmailSent = isUnmapped && !!s.supportEmailSent;
                       const isJustMapped = s.id === justMappedId;
                       return (
-                        <tr key={s.id} className={`border-t border-gray-100 hover:bg-gray-50 transition-colors duration-500 ${isUnmapped ? 'bg-red-50/30' : ''} ${isJustMapped ? 'bg-green-100' : ''}`}>
+                        <tr key={s.id} className={`border-t border-gray-100 hover:bg-gray-50 transition-colors duration-500 ${isEmailSent ? 'bg-amber-50/30' : isUnmapped ? 'bg-red-50/30' : ''} ${isJustMapped ? 'bg-green-100' : ''}`}>
                           <td className="px-3 py-2 font-medium truncate" style={{ width: storeColWidths[0] }}>{s.name}</td>
                           <td className="px-3 py-2 text-gray-600 truncate" style={{ width: storeColWidths[1] }}>{s.area}</td>
                           <td className="px-3 py-2 truncate" style={{ width: storeColWidths[2] }}>{nameMap[`ch:${s.channelId}`] || '—'}</td>
                           <td className="px-3 py-2 truncate" style={{ width: storeColWidths[3] }}>{nameMap[`tm:${s.teamId}`] || '—'}</td>
-                          <td className={`px-3 py-2 truncate ${isUnmapped ? 'text-red-500 font-medium' : 'font-mono text-xs'}`} style={{ width: storeColWidths[4] }}>
-                            {s.perigeeStoreCode}
+                          <td className={`px-3 py-2 truncate ${isEmailSent ? 'text-amber-500 font-medium' : isUnmapped ? 'text-red-500 font-medium' : 'font-mono text-xs'}`} style={{ width: storeColWidths[4] }}>
+                            {isEmailSent ? 'Email Sent' : s.perigeeStoreCode}
                           </td>
                           <td className="px-3 py-2 text-gray-600 text-xs truncate" style={{ width: storeColWidths[5] }}>{s.perigeeStoreName || '—'}</td>
                           <td className="px-3 py-2" style={{ width: 90 }}>

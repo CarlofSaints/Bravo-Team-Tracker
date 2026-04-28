@@ -10,6 +10,7 @@ export interface Store {
   repUserId: string | null;
   perigeeStoreCode: string;
   perigeeStoreName: string;
+  supportEmailSent?: boolean;
   createdAt: string;
 }
 

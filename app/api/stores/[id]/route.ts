@@ -23,6 +23,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     if (body.repUserId !== undefined) stores[idx].repUserId = body.repUserId;
     if (body.perigeeStoreCode !== undefined) stores[idx].perigeeStoreCode = body.perigeeStoreCode;
     if (body.perigeeStoreName !== undefined) stores[idx].perigeeStoreName = body.perigeeStoreName;
+    if (body.supportEmailSent !== undefined) stores[idx].supportEmailSent = body.supportEmailSent;
 
     await saveStores(stores);
     return NextResponse.json(stores[idx], { headers: noCacheHeaders() });
