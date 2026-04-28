@@ -122,6 +122,7 @@ function PerigeeSearchModal({ storeName, onSelect, onClose, onEmailSupport }: {
   const [matchCount, setMatchCount] = useState(0);
   const [searching, setSearching] = useState(false);
   const [searched, setSearched] = useState(false);
+  const mouseDownOnBackdrop = useRef(false);
 
   // Fetch channels on mount
   useEffect(() => {
@@ -156,8 +157,20 @@ function PerigeeSearchModal({ storeName, onSelect, onClose, onEmailSupport }: {
     return () => clearTimeout(t);
   }, [query, channel, doSearch]);
 
+  // Only close on click if mousedown AND mouseup both happened on the backdrop
+  function handleBackdropMouseDown(e: React.MouseEvent) {
+    mouseDownOnBackdrop.current = e.target === e.currentTarget;
+  }
+
+  function handleBackdropClick(e: React.MouseEvent) {
+    if (e.target === e.currentTarget && mouseDownOnBackdrop.current) {
+      onClose();
+    }
+    mouseDownOnBackdrop.current = false;
+  }
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onMouseDown={handleBackdropMouseDown} onClick={handleBackdropClick}>
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4 max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
         <div className="p-4 border-b border-gray-200">
           <div className="flex items-center justify-between mb-3">
@@ -263,6 +276,7 @@ export default function StoresPage() {
   // Mapping modal
   const [mappingStore, setMappingStore] = useState<StoreRow | null>(null);
   const [savingMatch, setSavingMatch] = useState(false);
+  const [justMappedId, setJustMappedId] = useState<string | null>(null);
 
   const reload = useCallback(() => {
     setFetching(true);
@@ -315,9 +329,19 @@ export default function StoresPage() {
       if (filterStatus === 'mapped' && s.perigeeStoreCode === 'Not Mapped') return false;
       if (filterStatus === 'unmapped' && s.perigeeStoreCode !== 'Not Mapped') return false;
       if (search) {
-        const q = search.toLowerCase();
-        if (!s.name.toLowerCase().includes(q) && !s.perigeeStoreCode.toLowerCase().includes(q) &&
-            !(nameMap[`ch:${s.channelId}`] || '').toLowerCase().includes(q)) return false;
+        const q = search.trim().toLowerCase();
+        if (!q) return true;
+        if (
+          (s.name || '').toLowerCase().includes(q) ||
+          (s.perigeeStoreCode || '').toLowerCase().includes(q) ||
+          (s.perigeeStoreName || '').toLowerCase().includes(q) ||
+          (s.area || '').toLowerCase().includes(q) ||
+          (nameMap[`ch:${s.channelId}`] || '').toLowerCase().includes(q) ||
+          (nameMap[`tm:${s.teamId}`] || '').toLowerCase().includes(q)
+        ) {
+          return true;
+        }
+        return false;
       }
       return true;
     });
@@ -454,10 +478,13 @@ export default function StoresPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ perigeeStoreCode: p.code, perigeeStoreName: p.name }),
       });
-      setStores(prev => prev.map(s => s.id === mappingStore.id ? {
+      const mappedId = mappingStore.id;
+      setStores(prev => prev.map(s => s.id === mappedId ? {
         ...s, perigeeStoreCode: p.code, perigeeStoreName: p.name,
       } : s));
       setMappingStore(null);
+      setJustMappedId(mappedId);
+      setTimeout(() => setJustMappedId(null), 2500);
     } catch { /* ignore */ }
     finally { setSavingMatch(false); }
   }
@@ -636,8 +663,9 @@ export default function StoresPage() {
                   ) : (
                     filtered.slice(0, 300).map(s => {
                       const isUnmapped = s.perigeeStoreCode === 'Not Mapped';
+                      const isJustMapped = s.id === justMappedId;
                       return (
-                        <tr key={s.id} className={`border-t border-gray-100 hover:bg-gray-50 ${isUnmapped ? 'bg-red-50/30' : ''}`}>
+                        <tr key={s.id} className={`border-t border-gray-100 hover:bg-gray-50 transition-colors duration-500 ${isUnmapped ? 'bg-red-50/30' : ''} ${isJustMapped ? 'bg-green-100' : ''}`}>
                           <td className="px-3 py-2 font-medium">{s.name}</td>
                           <td className="px-3 py-2 text-gray-600">{s.area}</td>
                           <td className="px-3 py-2">{nameMap[`ch:${s.channelId}`] || '—'}</td>
@@ -647,7 +675,12 @@ export default function StoresPage() {
                           </td>
                           <td className="px-3 py-2 text-gray-600 text-xs">{s.perigeeStoreName || '—'}</td>
                           <td className="px-3 py-2">
-                            {isUnmapped ? (
+                            {isJustMapped ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-500 text-white text-xs rounded-md font-bold animate-pulse">
+                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                                MAPPED
+                              </span>
+                            ) : isUnmapped ? (
                               <button
                                 onClick={() => setMappingStore(s)}
                                 className="px-2.5 py-1 bg-[var(--color-navy)] text-white text-xs rounded-md font-medium hover:bg-[var(--color-navy-light)] transition-colors"
