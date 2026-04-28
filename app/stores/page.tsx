@@ -282,6 +282,7 @@ export default function StoresPage() {
   const [mappingStore, setMappingStore] = useState<StoreRow | null>(null);
   const [savingMatch, setSavingMatch] = useState(false);
   const [justMappedId, setJustMappedId] = useState<string | null>(null);
+  const [justMappedName, setJustMappedName] = useState<string | null>(null);
 
   const reload = useCallback(() => {
     setFetching(true);
@@ -592,9 +593,11 @@ export default function StoresPage() {
       setStores(prev => prev.map(s => s.id === mappedId ? {
         ...s, perigeeStoreCode: p.code, perigeeStoreName: p.name,
       } : s));
+      const mappedName = `${mappingStore.name} → ${p.code}`;
       setMappingStore(null);
       setJustMappedId(mappedId);
-      setTimeout(() => setJustMappedId(null), 2500);
+      setJustMappedName(mappedName);
+      setTimeout(() => { setJustMappedId(null); setJustMappedName(null); }, 3000);
     } catch { /* ignore */ }
     finally { setSavingMatch(false); }
   }
@@ -763,6 +766,14 @@ export default function StoresPage() {
           </div>
           <div className="text-xs text-gray-400 pb-1">{filtered.length} stores</div>
         </div>
+
+        {/* Mapped success toast */}
+        {justMappedName && (
+          <div className="mb-3 px-4 py-3 bg-green-50 border border-green-200 rounded-xl flex items-center gap-2 animate-pulse">
+            <svg className="w-5 h-5 text-green-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+            <span className="text-sm font-medium text-green-700">Mapped: {justMappedName}</span>
+          </div>
+        )}
 
         {/* Stores table */}
         {fetching ? (
