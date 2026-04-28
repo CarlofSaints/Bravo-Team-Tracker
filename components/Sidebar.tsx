@@ -126,7 +126,7 @@ export default function Sidebar({ session, onLogout }: SidebarProps) {
           {isAdmin && <NavLink href="/teams" label="Teams" active={pathname === '/teams'} />}
           {isAdmin && <NavLink href="/users" label="Users" active={pathname === '/users'} />}
           {isAdmin && <NavLink href="/regions" label="Regions" active={pathname === '/regions'} />}
-          <NavLink href="/stores" label="Stores & Channels" active={pathname === '/stores'} />
+          <NavLink href="/stores" label="Store Mapper" active={pathname === '/stores'} />
           <NavLink href="/account" label="Account" active={pathname === '/account'} />
 
           {/* Pro upsell items */}

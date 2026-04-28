@@ -176,9 +176,21 @@ function PerigeeSearchModal({ storeName, storeArea, onSelect, onClose, onEmailSu
         <div className="p-4 border-b border-gray-200">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-bold text-[var(--color-navy)]">Map to Perigee Store</h3>
-            <button onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600">
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => onEmailSupport(storeName, storeArea)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 text-white rounded-lg text-xs font-medium hover:bg-amber-600 transition-colors"
+                title="Email Perigee support to add this store"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
+                </svg>
+                Email Support
+              </button>
+              <button onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600">
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
           </div>
           <div className="text-xs text-gray-500 mb-2">Mapping: <span className="font-medium text-gray-700">{storeName}</span>{storeArea && <span className="text-gray-400"> — {storeArea}</span>}</div>
           <div className="flex gap-2 mb-2">
@@ -209,16 +221,7 @@ function PerigeeSearchModal({ storeName, storeArea, onSelect, onClose, onEmailSu
           {searching && <div className="text-center text-gray-400 text-sm py-8">Searching...</div>}
           {!searching && searched && results.length === 0 && (
             <div className="text-center py-8">
-              <div className="text-gray-400 text-sm mb-3">No matching Perigee stores found</div>
-              <button
-                onClick={() => onEmailSupport(storeName, storeArea)}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-amber-500 text-white rounded-lg text-sm font-medium hover:bg-amber-600 transition-colors"
-              >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
-                </svg>
-                Email Perigee Support
-              </button>
+              <div className="text-gray-400 text-sm">No matching Perigee stores found</div>
             </div>
           )}
           {!searching && results.map(p => (
@@ -655,7 +658,7 @@ export default function StoresPage() {
     <>
       <Sidebar session={session} onLogout={logout} />
       <main className="ml-64 p-6">
-        <h1 className="text-2xl font-bold text-[var(--color-navy)] mb-6">Stores & Channels</h1>
+        <h1 className="text-2xl font-bold text-[var(--color-navy)] mb-6">Store Mapper</h1>
 
         {/* Score + Stats row */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
