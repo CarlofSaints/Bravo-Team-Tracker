@@ -23,14 +23,19 @@ export async function GET(req: Request) {
 
   // Aggregate by store code
   const byStoreCode: Record<string, number> = {};
+  const lastVisitByStoreCode: Record<string, string> = {};
   for (const v of filtered) {
     byStoreCode[v.storeCode] = (byStoreCode[v.storeCode] || 0) + 1;
+    if (!lastVisitByStoreCode[v.storeCode] || v.checkInDate > lastVisitByStoreCode[v.storeCode]) {
+      lastVisitByStoreCode[v.storeCode] = v.checkInDate;
+    }
   }
 
   return NextResponse.json({
     total: visits.length,
     filteredTotal: filtered.length,
     byStoreCode,
+    lastVisitByStoreCode,
   }, { headers: noCacheHeaders() });
 }
 

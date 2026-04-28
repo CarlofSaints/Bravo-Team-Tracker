@@ -21,7 +21,7 @@ interface RegionRow { id: string; name: string }
 interface ChannelRow { id: string; name: string }
 interface UserRow { id: string; name: string; surname: string; teamId: string | null }
 
-type SortCol = 'name' | 'area' | 'channel' | 'team' | 'region' | 'perigeeCode' | 'rep' | 'visits';
+type SortCol = 'name' | 'area' | 'channel' | 'team' | 'region' | 'perigeeCode' | 'rep' | 'visits' | 'lastVisit';
 type SortDir = 'asc' | 'desc';
 
 const COLUMNS: { key: SortCol; label: string; defaultWidth: number }[] = [
@@ -33,6 +33,7 @@ const COLUMNS: { key: SortCol; label: string; defaultWidth: number }[] = [
   { key: 'perigeeCode', label: 'Perigee Code', defaultWidth: 120 },
   { key: 'rep', label: 'Rep', defaultWidth: 150 },
   { key: 'visits', label: 'Visits', defaultWidth: 80 },
+  { key: 'lastVisit', label: 'Last Visit', defaultWidth: 110 },
 ];
 
 function getMonthRange() {
@@ -40,6 +41,12 @@ function getMonthRange() {
   const from = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
   const to = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   return { from, to };
+}
+
+function formatDate(iso: string): string {
+  if (!iso) return '';
+  const [y, m, d] = iso.split('-');
+  return `${d}/${m}/${y}`;
 }
 
 export default function DashboardPage() {
@@ -54,6 +61,7 @@ export default function DashboardPage() {
 
   // Visits
   const [visitMap, setVisitMap] = useState<Record<string, number>>({});
+  const [lastVisitMap, setLastVisitMap] = useState<Record<string, string>>({});
   const [visitTotal, setVisitTotal] = useState(0);
   const [visitFilteredTotal, setVisitFilteredTotal] = useState(0);
 
@@ -93,6 +101,7 @@ export default function DashboardPage() {
       .then(r => r.json())
       .then(data => {
         setVisitMap(data.byStoreCode || {});
+        setLastVisitMap(data.lastVisitByStoreCode || {});
         setVisitTotal(data.total || 0);
         setVisitFilteredTotal(data.filteredTotal || 0);
       })
@@ -133,6 +142,14 @@ export default function DashboardPage() {
     return m;
   }, [teams, regions, channels, users]);
 
+  // Build display name: Channel + Area
+  function storeName(s: StoreRow): string {
+    const ch = nameMap[`channel:${s.channelId}`] || '';
+    const area = s.area || '';
+    if (ch && area) return `${ch} ${area}`;
+    return ch || area || s.name;
+  }
+
   const filtered = useMemo(() => {
     return stores.filter(s => {
       if (filterChannel && s.channelId !== filterChannel) return false;
@@ -140,13 +157,21 @@ export default function DashboardPage() {
       if (filterRegion && s.regionId !== filterRegion) return false;
       if (filterUser && s.repUserId !== filterUser) return false;
       if (search) {
-        const q = search.toLowerCase();
-        const sName = s.name.toLowerCase();
+        const q = search.trim().toLowerCase();
+        if (!q) return true;
+        const displayName = storeName(s).toLowerCase();
         const cName = (nameMap[`channel:${s.channelId}`] || '').toLowerCase();
         const tName = (nameMap[`team:${s.teamId}`] || '').toLowerCase();
-        if (!sName.includes(q) && !cName.includes(q) && !tName.includes(q) && !s.perigeeStoreCode.toLowerCase().includes(q)) {
-          return false;
+        if (
+          displayName.includes(q) ||
+          (s.area || '').toLowerCase().includes(q) ||
+          cName.includes(q) ||
+          tName.includes(q) ||
+          s.perigeeStoreCode.toLowerCase().includes(q)
+        ) {
+          return true;
         }
+        return false;
       }
       return true;
     });
@@ -159,7 +184,7 @@ export default function DashboardPage() {
       let aVal = '';
       let bVal = '';
       switch (sortCol) {
-        case 'name': aVal = a.name; bVal = b.name; break;
+        case 'name': aVal = storeName(a); bVal = storeName(b); break;
         case 'area': aVal = a.area; bVal = b.area; break;
         case 'channel': aVal = nameMap[`channel:${a.channelId}`] || ''; bVal = nameMap[`channel:${b.channelId}`] || ''; break;
         case 'team': aVal = nameMap[`team:${a.teamId}`] || ''; bVal = nameMap[`team:${b.teamId}`] || ''; break;
@@ -171,12 +196,18 @@ export default function DashboardPage() {
           const bCount = b.perigeeStoreCode !== 'Not Mapped' ? (visitMap[b.perigeeStoreCode] || 0) : -1;
           return sortDir === 'asc' ? aCount - bCount : bCount - aCount;
         }
+        case 'lastVisit': {
+          const aDate = a.perigeeStoreCode !== 'Not Mapped' ? (lastVisitMap[a.perigeeStoreCode] || '') : '';
+          const bDate = b.perigeeStoreCode !== 'Not Mapped' ? (lastVisitMap[b.perigeeStoreCode] || '') : '';
+          const cmp = aDate.localeCompare(bDate);
+          return sortDir === 'asc' ? cmp : -cmp;
+        }
       }
       const cmp = aVal.localeCompare(bVal, undefined, { numeric: true, sensitivity: 'base' });
       return sortDir === 'asc' ? cmp : -cmp;
     });
     return list;
-  }, [filtered, sortCol, sortDir, nameMap, visitMap]);
+  }, [filtered, sortCol, sortDir, nameMap, visitMap, lastVisitMap]);
 
   const mapped = stores.filter(s => s.perigeeStoreCode !== 'Not Mapped').length;
 
@@ -239,7 +270,6 @@ export default function DashboardPage() {
 
         if (!storeCode || !rawDate) continue;
 
-        // Normalize DD/MM/YYYY to YYYY-MM-DD
         let checkInDate = rawDate;
         const ddmmyyyy = rawDate.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
         if (ddmmyyyy) {
@@ -254,7 +284,6 @@ export default function DashboardPage() {
 
       setVisitMsg(`Uploading ${visits.length.toLocaleString()} visits...`);
 
-      // Gzip
       const json = JSON.stringify({ visits });
       const blob = new Blob([json]);
       const cs = new CompressionStream('gzip');
@@ -288,6 +317,7 @@ export default function DashboardPage() {
       if (res.ok) {
         setVisitMsg('Visit data cleared'); setVisitMsgType('success');
         setVisitMap({});
+        setLastVisitMap({});
         setVisitTotal(0);
         setVisitFilteredTotal(0);
       }
@@ -363,31 +393,15 @@ export default function DashboardPage() {
           )}
           <div className="min-w-[130px]">
             <label className="block text-xs font-medium text-gray-500 mb-1">From</label>
-            <input
-              type="date"
-              value={dateFrom}
-              onChange={e => setDateFrom(e.target.value)}
-              className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-[var(--color-navy)]"
-            />
+            <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-[var(--color-navy)]" />
           </div>
           <div className="min-w-[130px]">
             <label className="block text-xs font-medium text-gray-500 mb-1">To</label>
-            <input
-              type="date"
-              value={dateTo}
-              onChange={e => setDateTo(e.target.value)}
-              className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-[var(--color-navy)]"
-            />
+            <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-[var(--color-navy)]" />
           </div>
           <div className="flex-1 min-w-[200px]">
             <label className="block text-xs font-medium text-gray-500 mb-1">Search</label>
-            <input
-              type="text"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Store name, code..."
-              className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-[var(--color-navy)]"
-            />
+            <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Store name, code..." className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-[var(--color-navy)]" />
           </div>
         </div>
 
@@ -413,7 +427,6 @@ export default function DashboardPage() {
                             <span className="text-[10px]">{sortDir === 'asc' ? '▲' : '▼'}</span>
                           )}
                         </span>
-                        {/* Resize handle */}
                         <div
                           className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-white/30"
                           onMouseDown={e => handleResizeStart(e, idx)}
@@ -428,15 +441,17 @@ export default function DashboardPage() {
                     <tr><td colSpan={COLUMNS.length} className="px-3 py-8 text-center text-gray-400">No stores found</td></tr>
                   ) : (
                     sorted.slice(0, 200).map(s => {
-                      const visitCount = s.perigeeStoreCode !== 'Not Mapped' ? (visitMap[s.perigeeStoreCode] || 0) : null;
+                      const isMapped = s.perigeeStoreCode !== 'Not Mapped';
+                      const visitCount = isMapped ? (visitMap[s.perigeeStoreCode] || 0) : null;
+                      const lastVisit = isMapped ? (lastVisitMap[s.perigeeStoreCode] || '') : '';
                       return (
                         <tr key={s.id} className="border-t border-gray-100 hover:bg-gray-50">
-                          <td className="px-3 py-2 font-medium truncate" style={{ width: colWidths[0] }}>{s.name}</td>
+                          <td className="px-3 py-2 font-medium truncate" style={{ width: colWidths[0] }}>{storeName(s)}</td>
                           <td className="px-3 py-2 text-gray-600 truncate" style={{ width: colWidths[1] }}>{s.area}</td>
                           <td className="px-3 py-2 truncate" style={{ width: colWidths[2] }}>{nameMap[`channel:${s.channelId}`] || '—'}</td>
                           <td className="px-3 py-2 truncate" style={{ width: colWidths[3] }}>{nameMap[`team:${s.teamId}`] || '—'}</td>
                           <td className="px-3 py-2 truncate" style={{ width: colWidths[4] }}>{nameMap[`region:${s.regionId}`] || '—'}</td>
-                          <td className={`px-3 py-2 truncate ${s.perigeeStoreCode === 'Not Mapped' ? 'text-red-500 font-medium' : ''}`} style={{ width: colWidths[5] }}>
+                          <td className={`px-3 py-2 truncate ${!isMapped ? 'text-red-500 font-medium' : ''}`} style={{ width: colWidths[5] }}>
                             {s.perigeeStoreCode}
                           </td>
                           <td className="px-3 py-2 text-gray-600 truncate" style={{ width: colWidths[6] }}>{s.repUserId ? (nameMap[`user:${s.repUserId}`] || '—') : '—'}</td>
@@ -448,6 +463,9 @@ export default function DashboardPage() {
                             ) : (
                               <span className="text-gray-400">0</span>
                             )}
+                          </td>
+                          <td className="px-3 py-2 text-xs text-gray-500 truncate" style={{ width: colWidths[8] }}>
+                            {lastVisit ? formatDate(lastVisit) : (isMapped ? <span className="text-gray-300">—</span> : <span className="text-gray-300">—</span>)}
                           </td>
                         </tr>
                       );

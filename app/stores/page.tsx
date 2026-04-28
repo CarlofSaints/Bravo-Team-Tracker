@@ -352,6 +352,94 @@ export default function StoresPage() {
     });
   }, [stores, filterChannel, filterStatus, search, nameMap]);
 
+  // Sort state for main table
+  type StoresSortCol = 'name' | 'area' | 'channel' | 'team' | 'perigeeCode' | 'perigeeName';
+  const [storesSortCol, setStoresSortCol] = useState<StoresSortCol>('name');
+  const [storesSortDir, setStoresSortDir] = useState<'asc' | 'desc'>('asc');
+
+  // Column widths for main stores table
+  const STORE_COLS: { key: StoresSortCol; label: string; defaultWidth: number }[] = [
+    { key: 'name', label: 'Store Name', defaultWidth: 200 },
+    { key: 'area', label: 'Area', defaultWidth: 130 },
+    { key: 'channel', label: 'Channel', defaultWidth: 130 },
+    { key: 'team', label: 'Team', defaultWidth: 120 },
+    { key: 'perigeeCode', label: 'Perigee Code', defaultWidth: 130 },
+    { key: 'perigeeName', label: 'Perigee Name', defaultWidth: 180 },
+  ];
+  const [storeColWidths, setStoreColWidths] = useState(STORE_COLS.map(c => c.defaultWidth));
+  const storeResizeRef = useRef<{ colIdx: number; startX: number; startW: number } | null>(null);
+
+  function handleStoreSort(col: StoresSortCol) {
+    if (storesSortCol === col) setStoresSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setStoresSortCol(col); setStoresSortDir('asc'); }
+  }
+
+  function handleStoreResizeStart(e: React.MouseEvent, colIdx: number) {
+    e.preventDefault(); e.stopPropagation();
+    storeResizeRef.current = { colIdx, startX: e.clientX, startW: storeColWidths[colIdx] };
+    function onMove(ev: MouseEvent) {
+      if (!storeResizeRef.current) return;
+      const diff = ev.clientX - storeResizeRef.current.startX;
+      const newW = Math.max(60, storeResizeRef.current.startW + diff);
+      setStoreColWidths(prev => { const next = [...prev]; next[storeResizeRef.current!.colIdx] = newW; return next; });
+    }
+    function onUp() { storeResizeRef.current = null; document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); }
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }
+
+  // Sort state for channel breakdown
+  type BreakdownSortCol = 'name' | 'total' | 'matched' | 'pct';
+  const [breakdownSortCol, setBreakdownSortCol] = useState<BreakdownSortCol>('name');
+  const [breakdownSortDir, setBreakdownSortDir] = useState<'asc' | 'desc'>('asc');
+
+  const BREAKDOWN_COLS: { key: BreakdownSortCol; label: string; defaultWidth: number; align?: string }[] = [
+    { key: 'name', label: 'Channel', defaultWidth: 200 },
+    { key: 'total', label: 'Total Stores', defaultWidth: 120, align: 'right' },
+    { key: 'matched', label: 'Matched', defaultWidth: 100, align: 'right' },
+    { key: 'pct', label: '% Match', defaultWidth: 100, align: 'right' },
+  ];
+  const [breakdownColWidths, setBreakdownColWidths] = useState(BREAKDOWN_COLS.map(c => c.defaultWidth));
+  const breakdownResizeRef = useRef<{ colIdx: number; startX: number; startW: number } | null>(null);
+
+  function handleBreakdownSort(col: BreakdownSortCol) {
+    if (breakdownSortCol === col) setBreakdownSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setBreakdownSortCol(col); setBreakdownSortDir('asc'); }
+  }
+
+  function handleBreakdownResizeStart(e: React.MouseEvent, colIdx: number) {
+    e.preventDefault(); e.stopPropagation();
+    breakdownResizeRef.current = { colIdx, startX: e.clientX, startW: breakdownColWidths[colIdx] };
+    function onMove(ev: MouseEvent) {
+      if (!breakdownResizeRef.current) return;
+      const diff = ev.clientX - breakdownResizeRef.current.startX;
+      const newW = Math.max(60, breakdownResizeRef.current.startW + diff);
+      setBreakdownColWidths(prev => { const next = [...prev]; next[breakdownResizeRef.current!.colIdx] = newW; return next; });
+    }
+    function onUp() { breakdownResizeRef.current = null; document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); }
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }
+
+  // Sorted filtered stores
+  const sortedStores = useMemo(() => {
+    const list = [...filtered];
+    list.sort((a, b) => {
+      let aVal = ''; let bVal = '';
+      switch (storesSortCol) {
+        case 'name': aVal = a.name; bVal = b.name; break;
+        case 'area': aVal = a.area; bVal = b.area; break;
+        case 'channel': aVal = nameMap[`ch:${a.channelId}`] || ''; bVal = nameMap[`ch:${b.channelId}`] || ''; break;
+        case 'team': aVal = nameMap[`tm:${a.teamId}`] || ''; bVal = nameMap[`tm:${b.teamId}`] || ''; break;
+        case 'perigeeCode': aVal = a.perigeeStoreCode; bVal = b.perigeeStoreCode; break;
+        case 'perigeeName': aVal = a.perigeeStoreName || ''; bVal = b.perigeeStoreName || ''; break;
+      }
+      const cmp = aVal.localeCompare(bVal, undefined, { numeric: true, sensitivity: 'base' });
+      return storesSortDir === 'asc' ? cmp : -cmp;
+    });
+    return list;
+  }, [filtered, storesSortCol, storesSortDir, nameMap]);
+
   // Channel breakdown
   const channelBreakdown = useMemo(() => {
     const map: Record<string, { total: number; matched: number; name: string }> = {};
@@ -361,8 +449,25 @@ export default function StoresPage() {
       map[key].total++;
       if (s.perigeeStoreCode !== 'Not Mapped') map[key].matched++;
     }
-    return Object.values(map).sort((a, b) => a.name.localeCompare(b.name));
+    return Object.values(map);
   }, [stores, nameMap]);
+
+  const sortedBreakdown = useMemo(() => {
+    const list = [...channelBreakdown];
+    list.sort((a, b) => {
+      switch (breakdownSortCol) {
+        case 'name': { const cmp = a.name.localeCompare(b.name); return breakdownSortDir === 'asc' ? cmp : -cmp; }
+        case 'total': return breakdownSortDir === 'asc' ? a.total - b.total : b.total - a.total;
+        case 'matched': return breakdownSortDir === 'asc' ? a.matched - b.matched : b.matched - a.matched;
+        case 'pct': {
+          const ap = a.total > 0 ? a.matched / a.total : 0;
+          const bp = b.total > 0 ? b.matched / b.total : 0;
+          return breakdownSortDir === 'asc' ? ap - bp : bp - ap;
+        }
+      }
+    });
+    return list;
+  }, [channelBreakdown, breakdownSortCol, breakdownSortDir]);
 
   // Upload handlers
   async function handleMatchUpload(file: File) {
@@ -665,36 +770,44 @@ export default function StoresPage() {
         ) : (
           <div className="bg-white rounded-xl border border-gray-200 overflow-hidden mb-6">
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="text-sm" style={{ tableLayout: 'fixed', width: storeColWidths.reduce((a, b) => a + b, 0) + 90 }}>
                 <thead>
                   <tr className="bg-[var(--color-navy)] text-white text-left">
-                    <th className="px-3 py-2.5 font-medium">Store Name</th>
-                    <th className="px-3 py-2.5 font-medium">Area</th>
-                    <th className="px-3 py-2.5 font-medium">Channel</th>
-                    <th className="px-3 py-2.5 font-medium">Team</th>
-                    <th className="px-3 py-2.5 font-medium">Perigee Code</th>
-                    <th className="px-3 py-2.5 font-medium">Perigee Name</th>
-                    <th className="px-3 py-2.5 font-medium w-20"></th>
+                    {STORE_COLS.map((col, idx) => (
+                      <th
+                        key={col.key}
+                        className="px-3 py-2.5 font-medium relative select-none cursor-pointer hover:bg-white/10 transition-colors"
+                        style={{ width: storeColWidths[idx] }}
+                        onClick={() => handleStoreSort(col.key)}
+                      >
+                        <span className="flex items-center gap-1">
+                          {col.label}
+                          {storesSortCol === col.key && <span className="text-[10px]">{storesSortDir === 'asc' ? '▲' : '▼'}</span>}
+                        </span>
+                        <div className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-white/30" onMouseDown={e => handleStoreResizeStart(e, idx)} onClick={e => e.stopPropagation()} />
+                      </th>
+                    ))}
+                    <th className="px-3 py-2.5 font-medium" style={{ width: 90 }}></th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.length === 0 ? (
-                    <tr><td colSpan={7} className="px-3 py-8 text-center text-gray-400">No stores found</td></tr>
+                  {sortedStores.length === 0 ? (
+                    <tr><td colSpan={STORE_COLS.length + 1} className="px-3 py-8 text-center text-gray-400">No stores found</td></tr>
                   ) : (
-                    filtered.slice(0, 300).map(s => {
+                    sortedStores.slice(0, 300).map(s => {
                       const isUnmapped = s.perigeeStoreCode === 'Not Mapped';
                       const isJustMapped = s.id === justMappedId;
                       return (
                         <tr key={s.id} className={`border-t border-gray-100 hover:bg-gray-50 transition-colors duration-500 ${isUnmapped ? 'bg-red-50/30' : ''} ${isJustMapped ? 'bg-green-100' : ''}`}>
-                          <td className="px-3 py-2 font-medium">{s.name}</td>
-                          <td className="px-3 py-2 text-gray-600">{s.area}</td>
-                          <td className="px-3 py-2">{nameMap[`ch:${s.channelId}`] || '—'}</td>
-                          <td className="px-3 py-2">{nameMap[`tm:${s.teamId}`] || '—'}</td>
-                          <td className={`px-3 py-2 ${isUnmapped ? 'text-red-500 font-medium' : 'font-mono text-xs'}`}>
+                          <td className="px-3 py-2 font-medium truncate" style={{ width: storeColWidths[0] }}>{s.name}</td>
+                          <td className="px-3 py-2 text-gray-600 truncate" style={{ width: storeColWidths[1] }}>{s.area}</td>
+                          <td className="px-3 py-2 truncate" style={{ width: storeColWidths[2] }}>{nameMap[`ch:${s.channelId}`] || '—'}</td>
+                          <td className="px-3 py-2 truncate" style={{ width: storeColWidths[3] }}>{nameMap[`tm:${s.teamId}`] || '—'}</td>
+                          <td className={`px-3 py-2 truncate ${isUnmapped ? 'text-red-500 font-medium' : 'font-mono text-xs'}`} style={{ width: storeColWidths[4] }}>
                             {s.perigeeStoreCode}
                           </td>
-                          <td className="px-3 py-2 text-gray-600 text-xs">{s.perigeeStoreName || '—'}</td>
-                          <td className="px-3 py-2">
+                          <td className="px-3 py-2 text-gray-600 text-xs truncate" style={{ width: storeColWidths[5] }}>{s.perigeeStoreName || '—'}</td>
+                          <td className="px-3 py-2" style={{ width: 90 }}>
                             <div className="flex items-center gap-1.5">
                               {isJustMapped ? (
                                 <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-500 text-white text-xs rounded-md font-bold animate-pulse">
@@ -735,8 +848,8 @@ export default function StoresPage() {
                 </tbody>
               </table>
             </div>
-            {filtered.length > 300 && (
-              <div className="px-3 py-2 text-xs text-gray-400 border-t">Showing 300 of {filtered.length} stores</div>
+            {sortedStores.length > 300 && (
+              <div className="px-3 py-2 text-xs text-gray-400 border-t">Showing 300 of {sortedStores.length} stores</div>
             )}
           </div>
         )}
@@ -747,31 +860,43 @@ export default function StoresPage() {
             <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
               <h2 className="text-sm font-bold text-[var(--color-navy)]">Channel Breakdown</h2>
             </div>
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-gray-500 border-b">
-                  <th className="px-3 py-2 font-medium">Channel</th>
-                  <th className="px-3 py-2 font-medium text-right">Total Stores</th>
-                  <th className="px-3 py-2 font-medium text-right">Matched</th>
-                  <th className="px-3 py-2 font-medium text-right">% Match</th>
-                </tr>
-              </thead>
-              <tbody>
-                {channelBreakdown.map(cb => {
-                  const p = cb.total > 0 ? Math.round((cb.matched / cb.total) * 100) : 0;
-                  return (
-                    <tr key={cb.name} className="border-t border-gray-100 hover:bg-gray-50">
-                      <td className="px-3 py-2 font-medium">{cb.name}</td>
-                      <td className="px-3 py-2 text-right">{cb.total}</td>
-                      <td className="px-3 py-2 text-right">{cb.matched}</td>
-                      <td className="px-3 py-2 text-right">
-                        <span className={`font-medium ${p >= 80 ? 'text-green-600' : p >= 50 ? 'text-amber-600' : 'text-red-600'}`}>{p}%</span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+            <div className="overflow-x-auto">
+              <table className="text-sm" style={{ tableLayout: 'fixed', width: breakdownColWidths.reduce((a, b) => a + b, 0) }}>
+                <thead>
+                  <tr className="text-left text-gray-500 border-b">
+                    {BREAKDOWN_COLS.map((col, idx) => (
+                      <th
+                        key={col.key}
+                        className={`px-3 py-2 font-medium relative select-none cursor-pointer hover:bg-gray-100 transition-colors ${col.align === 'right' ? 'text-right' : ''}`}
+                        style={{ width: breakdownColWidths[idx] }}
+                        onClick={() => handleBreakdownSort(col.key)}
+                      >
+                        <span className={`inline-flex items-center gap-1 ${col.align === 'right' ? 'justify-end w-full' : ''}`}>
+                          {col.label}
+                          {breakdownSortCol === col.key && <span className="text-[10px]">{breakdownSortDir === 'asc' ? '▲' : '▼'}</span>}
+                        </span>
+                        <div className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-gray-300" onMouseDown={e => handleBreakdownResizeStart(e, idx)} onClick={e => e.stopPropagation()} />
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedBreakdown.map(cb => {
+                    const p = cb.total > 0 ? Math.round((cb.matched / cb.total) * 100) : 0;
+                    return (
+                      <tr key={cb.name} className="border-t border-gray-100 hover:bg-gray-50">
+                        <td className="px-3 py-2 font-medium truncate" style={{ width: breakdownColWidths[0] }}>{cb.name}</td>
+                        <td className="px-3 py-2 text-right" style={{ width: breakdownColWidths[1] }}>{cb.total}</td>
+                        <td className="px-3 py-2 text-right" style={{ width: breakdownColWidths[2] }}>{cb.matched}</td>
+                        <td className="px-3 py-2 text-right" style={{ width: breakdownColWidths[3] }}>
+                          <span className={`font-medium ${p >= 80 ? 'text-green-600' : p >= 50 ? 'text-amber-600' : 'text-red-600'}`}>{p}%</span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </main>
