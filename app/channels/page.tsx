@@ -55,7 +55,9 @@ export default function ChannelsPage() {
     authFetch('/api/channels', { cache: 'no-store' })
       .then(r => r.json())
       .then(data => {
-        setChannels(Array.isArray(data) ? data : []);
+        const list = Array.isArray(data) ? data : [];
+        list.sort((a: ChannelRow, b: ChannelRow) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+        setChannels(list);
         setFetching(false);
       })
       .catch(() => setFetching(false));

@@ -95,9 +95,19 @@ export default function DashboardPage() {
   const [sortCol, setSortCol] = useState<SortCol>('name');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
 
-  // Column widths
+  // Column widths (store grid)
   const [colWidths, setColWidths] = useState<number[]>(COLUMNS.map(c => c.defaultWidth));
   const resizingRef = useRef<{ colIdx: number; startX: number; startW: number } | null>(null);
+
+  // Channel perf grid: collapse + column widths
+  const [chPerfCollapsed, setChPerfCollapsed] = useState(false);
+  const [chPerfWidths, setChPerfWidths] = useState([200, 100, 120, 130, 120]);
+  const chResizingRef = useRef<{ colIdx: number; startX: number; startW: number } | null>(null);
+
+  // Team perf grid: collapse + column widths
+  const [tmPerfCollapsed, setTmPerfCollapsed] = useState(false);
+  const [tmPerfWidths, setTmPerfWidths] = useState([200, 100, 120, 130, 120]);
+  const tmResizingRef = useRef<{ colIdx: number; startX: number; startW: number } | null>(null);
 
   // Fetch visits
   const fetchVisits = useCallback(() => {
@@ -320,6 +330,32 @@ export default function DashboardPage() {
     document.addEventListener('mouseup', onUp);
   }
 
+  // Channel perf resize
+  function handleChResizeStart(e: React.MouseEvent, colIdx: number) {
+    e.preventDefault(); e.stopPropagation();
+    chResizingRef.current = { colIdx, startX: e.clientX, startW: chPerfWidths[colIdx] };
+    function onMove(ev: MouseEvent) {
+      if (!chResizingRef.current) return;
+      const diff = ev.clientX - chResizingRef.current.startX;
+      setChPerfWidths(prev => { const next = [...prev]; next[chResizingRef.current!.colIdx] = Math.max(60, chResizingRef.current!.startW + diff); return next; });
+    }
+    function onUp() { chResizingRef.current = null; document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); }
+    document.addEventListener('mousemove', onMove); document.addEventListener('mouseup', onUp);
+  }
+
+  // Team perf resize
+  function handleTmResizeStart(e: React.MouseEvent, colIdx: number) {
+    e.preventDefault(); e.stopPropagation();
+    tmResizingRef.current = { colIdx, startX: e.clientX, startW: tmPerfWidths[colIdx] };
+    function onMove(ev: MouseEvent) {
+      if (!tmResizingRef.current) return;
+      const diff = ev.clientX - tmResizingRef.current.startX;
+      setTmPerfWidths(prev => { const next = [...prev]; next[tmResizingRef.current!.colIdx] = Math.max(60, tmResizingRef.current!.startW + diff); return next; });
+    }
+    function onUp() { tmResizingRef.current = null; document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); }
+    document.addEventListener('mousemove', onMove); document.addEventListener('mouseup', onUp);
+  }
+
   // Visits upload handler
   async function handleVisitUpload(file: File) {
     setVisitUploading(true); setVisitMsg('Parsing file...'); setVisitMsgType('');
@@ -479,78 +515,106 @@ export default function DashboardPage() {
         {/* Channel Performance */}
         {!fetching && channelPerf.length > 0 && (
           <div className="bg-white rounded-lg border border-gray-200 overflow-hidden mb-4">
-            <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
-              <h2 className="text-sm font-bold text-[var(--color-navy)]">Channel Performance</h2>
+            <div
+              className="px-4 py-3 bg-gray-50 flex items-center justify-between cursor-pointer select-none"
+              onClick={() => setChPerfCollapsed(c => !c)}
+            >
+              <div className="flex items-center gap-2.5">
+                <svg className={`w-4 h-4 text-gray-400 transition-transform ${chPerfCollapsed ? '' : 'rotate-90'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+                <h2 className="text-sm font-bold text-[var(--color-navy)]">Channel Performance</h2>
+                <span className="px-2 py-0.5 text-[10px] font-bold bg-gray-100 text-gray-500 rounded-full">{channelPerf.length} {channelPerf.length === 1 ? 'channel' : 'channels'}</span>
+              </div>
             </div>
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-[var(--color-navy)] text-white text-left">
-                  <th className="px-3 py-2 font-medium">Channel</th>
-                  <th className="px-3 py-2 font-medium text-right">Visits</th>
-                  <th className="px-3 py-2 font-medium text-right">Stores Seen</th>
-                  <th className="px-3 py-2 font-medium text-right">Stores Missed</th>
-                  <th className="px-3 py-2 font-medium text-right">% to Target</th>
-                </tr>
-              </thead>
-              <tbody>
-                {channelPerf.map(cp => (
-                  <tr key={cp.id} className="border-t border-gray-100 hover:bg-gray-50">
-                    <td className="px-3 py-2 font-medium">{cp.name}</td>
-                    <td className="px-3 py-2 text-right">{cp.visits.toLocaleString()}</td>
-                    <td className="px-3 py-2 text-right text-green-600 font-medium">{cp.seen}</td>
-                    <td className="px-3 py-2 text-right text-red-600 font-medium">{cp.missed}</td>
-                    <td className="px-3 py-2 text-right">
-                      {cp.pct !== undefined ? (
-                        <span className={`inline-block min-w-[48px] text-center px-2 py-0.5 rounded text-xs font-bold ${cp.pct >= 100 ? 'bg-green-100 text-green-700' : cp.pct >= 50 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
-                          {cp.pct}%
-                        </span>
-                      ) : (
-                        <span className="text-gray-400">{'\u2014'}</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            {!chPerfCollapsed && (
+              <div className="overflow-x-auto">
+                <table className="text-sm" style={{ tableLayout: 'fixed', width: chPerfWidths.reduce((a, b) => a + b, 0) }}>
+                  <thead>
+                    <tr className="bg-[var(--color-navy)] text-white text-left">
+                      {['Channel', 'Visits', 'Stores Seen', 'Stores Missed', '% to Target'].map((label, idx) => (
+                        <th key={label} className={`px-3 py-2 font-medium relative select-none ${idx > 0 ? 'text-right' : ''}`} style={{ width: chPerfWidths[idx] }}>
+                          {label}
+                          <div className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-white/30" onMouseDown={e => handleChResizeStart(e, idx)} />
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {channelPerf.map(cp => (
+                      <tr key={cp.id} className="border-t border-gray-100 hover:bg-gray-50">
+                        <td className="px-3 py-2 font-medium truncate" style={{ width: chPerfWidths[0] }}>{cp.name}</td>
+                        <td className="px-3 py-2 text-right" style={{ width: chPerfWidths[1] }}>{cp.visits.toLocaleString()}</td>
+                        <td className="px-3 py-2 text-right text-green-600 font-medium" style={{ width: chPerfWidths[2] }}>{cp.seen}</td>
+                        <td className="px-3 py-2 text-right text-red-600 font-medium" style={{ width: chPerfWidths[3] }}>{cp.missed}</td>
+                        <td className="px-3 py-2 text-right" style={{ width: chPerfWidths[4] }}>
+                          {cp.pct !== undefined ? (
+                            <span className={`inline-block min-w-[48px] text-center px-2 py-0.5 rounded text-xs font-bold ${cp.pct >= 100 ? 'bg-green-100 text-green-700' : cp.pct >= 50 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
+                              {cp.pct}%
+                            </span>
+                          ) : (
+                            <span className="text-gray-400">{'\u2014'}</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
 
         {/* Team Performance */}
         {!fetching && teamPerf.length > 0 && (
           <div className="bg-white rounded-lg border border-gray-200 overflow-hidden mb-4">
-            <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
-              <h2 className="text-sm font-bold text-[var(--color-navy)]">Team Performance</h2>
+            <div
+              className="px-4 py-3 bg-gray-50 flex items-center justify-between cursor-pointer select-none"
+              onClick={() => setTmPerfCollapsed(c => !c)}
+            >
+              <div className="flex items-center gap-2.5">
+                <svg className={`w-4 h-4 text-gray-400 transition-transform ${tmPerfCollapsed ? '' : 'rotate-90'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+                <h2 className="text-sm font-bold text-[var(--color-navy)]">Team Performance</h2>
+                <span className="px-2 py-0.5 text-[10px] font-bold bg-gray-100 text-gray-500 rounded-full">{teamPerf.length} {teamPerf.length === 1 ? 'team' : 'teams'}</span>
+              </div>
             </div>
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-[var(--color-navy)] text-white text-left">
-                  <th className="px-3 py-2 font-medium">Team</th>
-                  <th className="px-3 py-2 font-medium text-right">Visits</th>
-                  <th className="px-3 py-2 font-medium text-right">Stores Seen</th>
-                  <th className="px-3 py-2 font-medium text-right">Stores Missed</th>
-                  <th className="px-3 py-2 font-medium text-right">% to Target</th>
-                </tr>
-              </thead>
-              <tbody>
-                {teamPerf.map(tp => (
-                  <tr key={tp.id} className="border-t border-gray-100 hover:bg-gray-50">
-                    <td className="px-3 py-2 font-medium">{tp.name}</td>
-                    <td className="px-3 py-2 text-right">{tp.visits.toLocaleString()}</td>
-                    <td className="px-3 py-2 text-right text-green-600 font-medium">{tp.seen}</td>
-                    <td className="px-3 py-2 text-right text-red-600 font-medium">{tp.missed}</td>
-                    <td className="px-3 py-2 text-right">
-                      {tp.pct !== undefined ? (
-                        <span className={`inline-block min-w-[48px] text-center px-2 py-0.5 rounded text-xs font-bold ${tp.pct >= 100 ? 'bg-green-100 text-green-700' : tp.pct >= 50 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
-                          {tp.pct}%
-                        </span>
-                      ) : (
-                        <span className="text-gray-400">{'\u2014'}</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            {!tmPerfCollapsed && (
+              <div className="overflow-x-auto">
+                <table className="text-sm" style={{ tableLayout: 'fixed', width: tmPerfWidths.reduce((a, b) => a + b, 0) }}>
+                  <thead>
+                    <tr className="bg-[var(--color-navy)] text-white text-left">
+                      {['Team', 'Visits', 'Stores Seen', 'Stores Missed', '% to Target'].map((label, idx) => (
+                        <th key={label} className={`px-3 py-2 font-medium relative select-none ${idx > 0 ? 'text-right' : ''}`} style={{ width: tmPerfWidths[idx] }}>
+                          {label}
+                          <div className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-white/30" onMouseDown={e => handleTmResizeStart(e, idx)} />
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {teamPerf.map(tp => (
+                      <tr key={tp.id} className="border-t border-gray-100 hover:bg-gray-50">
+                        <td className="px-3 py-2 font-medium truncate" style={{ width: tmPerfWidths[0] }}>{tp.name}</td>
+                        <td className="px-3 py-2 text-right" style={{ width: tmPerfWidths[1] }}>{tp.visits.toLocaleString()}</td>
+                        <td className="px-3 py-2 text-right text-green-600 font-medium" style={{ width: tmPerfWidths[2] }}>{tp.seen}</td>
+                        <td className="px-3 py-2 text-right text-red-600 font-medium" style={{ width: tmPerfWidths[3] }}>{tp.missed}</td>
+                        <td className="px-3 py-2 text-right" style={{ width: tmPerfWidths[4] }}>
+                          {tp.pct !== undefined ? (
+                            <span className={`inline-block min-w-[48px] text-center px-2 py-0.5 rounded text-xs font-bold ${tp.pct >= 100 ? 'bg-green-100 text-green-700' : tp.pct >= 50 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
+                              {tp.pct}%
+                            </span>
+                          ) : (
+                            <span className="text-gray-400">{'\u2014'}</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
 
