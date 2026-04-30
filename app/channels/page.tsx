@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useAuth, authFetch } from '@/lib/useAuth';
 import Sidebar from '@/components/Sidebar';
 
@@ -23,6 +23,12 @@ function freqLabel(val?: string): string {
   return FREQ_OPTIONS.find(o => o.value === val)?.label || val;
 }
 
+const COLUMNS = [
+  { key: 'name', label: 'Channel', defaultWidth: 250 },
+  { key: 'frequency', label: 'Target Frequency', defaultWidth: 200 },
+  { key: 'actions', label: 'Actions', defaultWidth: 90 },
+];
+
 export default function ChannelsPage() {
   const { session, loading, logout } = useAuth('admin');
 
@@ -34,6 +40,10 @@ export default function ChannelsPage() {
   const [formFreq, setFormFreq] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+
+  // Column widths
+  const [colWidths, setColWidths] = useState<number[]>(COLUMNS.map(c => c.defaultWidth));
+  const resizingRef = useRef<{ colIdx: number; startX: number; startW: number } | null>(null);
 
   useEffect(() => {
     if (!session) return;
@@ -83,6 +93,44 @@ export default function ChannelsPage() {
     reload();
   }
 
+  function handleResizeStart(e: React.MouseEvent, colIdx: number) {
+    e.preventDefault();
+    e.stopPropagation();
+    resizingRef.current = { colIdx, startX: e.clientX, startW: colWidths[colIdx] };
+
+    function onMove(ev: MouseEvent) {
+      if (!resizingRef.current) return;
+      const diff = ev.clientX - resizingRef.current.startX;
+      const newW = Math.max(60, resizingRef.current.startW + diff);
+      setColWidths(prev => {
+        const next = [...prev];
+        next[resizingRef.current!.colIdx] = newW;
+        return next;
+      });
+    }
+
+    function onUp() {
+      resizingRef.current = null;
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    }
+
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }
+
+  async function handleExport() {
+    const XLSX = await import('xlsx');
+    const rows = channels.map(ch => ({
+      'Channel': ch.name,
+      'Target Frequency': freqLabel(ch.targetFrequency),
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Channels');
+    XLSX.writeFile(wb, 'channels.xlsx');
+  }
+
   if (loading || !session) {
     return <div className="min-h-screen flex items-center justify-center text-gray-400">Loading...</div>;
   }
@@ -93,9 +141,16 @@ export default function ChannelsPage() {
       <main className="ml-64 p-6">
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-bold text-[var(--color-navy)]">Channels</h1>
-          <button onClick={openCreate} className="px-4 py-2 bg-[var(--color-navy)] text-white rounded-lg text-sm font-medium hover:bg-[var(--color-navy-light)] transition-colors">
-            + New Channel
-          </button>
+          <div className="flex gap-2">
+            {channels.length > 0 && (
+              <button onClick={handleExport} className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors">
+                Export Excel
+              </button>
+            )}
+            <button onClick={openCreate} className="px-4 py-2 bg-[var(--color-navy)] text-white rounded-lg text-sm font-medium hover:bg-[var(--color-navy-light)] transition-colors">
+              + New Channel
+            </button>
+          </div>
         </div>
 
         {showForm && (
@@ -133,37 +188,51 @@ export default function ChannelsPage() {
           <div className="text-center text-gray-400 py-12">Loading channels...</div>
         ) : (
           <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-[var(--color-navy)] text-white text-left">
-                  <th className="px-3 py-2 font-medium">Channel</th>
-                  <th className="px-3 py-2 font-medium">Target Frequency</th>
-                  <th className="px-3 py-2 font-medium w-20">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {channels.length === 0 ? (
-                  <tr><td colSpan={3} className="px-3 py-8 text-center text-gray-400">No channels yet</td></tr>
-                ) : (
-                  channels.map(ch => (
-                    <tr key={ch.id} className="border-t border-gray-100 hover:bg-gray-50">
-                      <td className="px-3 py-2 font-medium">{ch.name}</td>
-                      <td className="px-3 py-2 text-gray-600">{freqLabel(ch.targetFrequency)}</td>
-                      <td className="px-3 py-2">
-                        <div className="flex gap-1">
-                          <button onClick={() => openEdit(ch)} className="p-1 text-gray-400 hover:text-[var(--color-navy)]">
-                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125" /></svg>
-                          </button>
-                          <button onClick={() => handleDelete(ch.id)} className="p-1 text-gray-400 hover:text-red-600">
-                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" /></svg>
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+            <div className="overflow-x-auto">
+              <table className="text-sm" style={{ tableLayout: 'fixed', width: colWidths.reduce((a, b) => a + b, 0) }}>
+                <thead>
+                  <tr className="bg-[var(--color-navy)] text-white text-left">
+                    {COLUMNS.map((col, idx) => (
+                      <th
+                        key={col.key}
+                        className="px-3 py-2 font-medium relative select-none"
+                        style={{ width: colWidths[idx] }}
+                      >
+                        {col.label}
+                        {idx < COLUMNS.length - 1 && (
+                          <div
+                            className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-white/30"
+                            onMouseDown={e => handleResizeStart(e, idx)}
+                          />
+                        )}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {channels.length === 0 ? (
+                    <tr><td colSpan={COLUMNS.length} className="px-3 py-8 text-center text-gray-400">No channels yet</td></tr>
+                  ) : (
+                    channels.map(ch => (
+                      <tr key={ch.id} className="border-t border-gray-100 hover:bg-gray-50">
+                        <td className="px-3 py-2 font-medium truncate" style={{ width: colWidths[0] }}>{ch.name}</td>
+                        <td className="px-3 py-2 text-gray-600 truncate" style={{ width: colWidths[1] }}>{freqLabel(ch.targetFrequency)}</td>
+                        <td className="px-3 py-2" style={{ width: colWidths[2] }}>
+                          <div className="flex gap-1">
+                            <button onClick={() => openEdit(ch)} className="p-1 text-gray-400 hover:text-[var(--color-navy)]">
+                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125" /></svg>
+                            </button>
+                            <button onClick={() => handleDelete(ch.id)} className="p-1 text-gray-400 hover:text-red-600">
+                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" /></svg>
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </main>
