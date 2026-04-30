@@ -18,7 +18,7 @@ interface StoreRow {
 
 interface TeamRow { id: string; name: string }
 interface RegionRow { id: string; name: string }
-interface ChannelRow { id: string; name: string }
+interface ChannelRow { id: string; name: string; targetFrequency?: string }
 interface UserRow { id: string; name: string; surname: string; teamId: string | null }
 
 type SortCol = 'name' | 'area' | 'channel' | 'team' | 'region' | 'perigeeCode' | 'rep' | 'visits' | 'lastVisit';
@@ -64,6 +64,9 @@ export default function DashboardPage() {
   const [lastVisitMap, setLastVisitMap] = useState<Record<string, string>>({});
   const [visitTotal, setVisitTotal] = useState(0);
   const [visitFilteredTotal, setVisitFilteredTotal] = useState(0);
+
+  // Quarter visits (for "Missing" card)
+  const [quarterVisitMap, setQuarterVisitMap] = useState<Record<string, number>>({});
 
   // Date filters
   const { from: defaultFrom, to: defaultTo } = getMonthRange();
@@ -136,6 +139,21 @@ export default function DashboardPage() {
     if (!session) return;
     fetchVisits();
   }, [session, fetchVisits]);
+
+  // Fetch quarter visits for the "Missing" card
+  useEffect(() => {
+    if (!session || !dateFrom) return;
+    const d = new Date(dateFrom);
+    const qMonth = Math.floor(d.getMonth() / 3) * 3; // 0,3,6,9
+    const qFrom = `${d.getFullYear()}-${String(qMonth + 1).padStart(2, '0')}-01`;
+    const qEnd = new Date(d.getFullYear(), qMonth + 3, 0); // last day of quarter end month
+    const qTo = `${qEnd.getFullYear()}-${String(qEnd.getMonth() + 1).padStart(2, '0')}-${String(qEnd.getDate()).padStart(2, '0')}`;
+    const params = new URLSearchParams({ from: qFrom, to: qTo });
+    authFetch(`/api/visits?${params}`, { cache: 'no-store' })
+      .then(r => r.json())
+      .then(data => setQuarterVisitMap(data.byStoreCode || {}))
+      .catch(() => {});
+  }, [session, dateFrom]);
 
   const nameMap = useMemo(() => {
     const m: Record<string, string> = {};
@@ -216,7 +234,54 @@ export default function DashboardPage() {
     return list;
   }, [filtered, sortCol, sortDir, nameMap, visitMap, lastVisitMap]);
 
-  const mapped = stores.filter(s => s.perigeeStoreCode !== 'Not Mapped').length;
+  const mappedStores = useMemo(() => stores.filter(s => s.perigeeStoreCode !== 'Not Mapped'), [stores]);
+  const mapped = mappedStores.length;
+
+  // Card computations
+  const storesVisited = useMemo(() => mappedStores.filter(s => (visitMap[s.perigeeStoreCode] || 0) > 0).length, [mappedStores, visitMap]);
+  const storesMissed = mapped - storesVisited;
+  const storesMissingQuarter = useMemo(() => mappedStores.filter(s => !(quarterVisitMap[s.perigeeStoreCode])).length, [mappedStores, quarterVisitMap]);
+
+  // Frequency → monthly rate
+  const FREQ_RATE: Record<string, number> = { weekly: 4, monthly_3: 3, monthly_2: 2, monthly_1: 1, bimonthly: 0.5, quarterly: 0.333, biannual: 0.167, annual: 0.083 };
+
+  // Channel performance grid data
+  const channelPerf = useMemo(() => {
+    return channels.map(ch => {
+      const chStores = mappedStores.filter(s => s.channelId === ch.id);
+      const visits = chStores.reduce((sum, s) => sum + (visitMap[s.perigeeStoreCode] || 0), 0);
+      const seen = chStores.filter(s => (visitMap[s.perigeeStoreCode] || 0) > 0).length;
+      const missed = chStores.length - seen;
+      const freq = (ch as ChannelRow).targetFrequency;
+      const rate = freq ? FREQ_RATE[freq] : undefined;
+      const target = rate !== undefined ? chStores.length * rate : undefined;
+      const pct = target !== undefined && target > 0 ? Math.round((visits / target) * 100) : undefined;
+      return { id: ch.id, name: ch.name, storeCount: chStores.length, visits, seen, missed, pct };
+    }).filter(c => c.storeCount > 0);
+  }, [channels, mappedStores, visitMap]);
+
+  // Team performance grid data
+  const teamPerf = useMemo(() => {
+    return teams.map(tm => {
+      const tmStores = mappedStores.filter(s => s.teamId === tm.id);
+      const visits = tmStores.reduce((sum, s) => sum + (visitMap[s.perigeeStoreCode] || 0), 0);
+      const seen = tmStores.filter(s => (visitMap[s.perigeeStoreCode] || 0) > 0).length;
+      const missed = tmStores.length - seen;
+      // Aggregate target across channels for this team's stores
+      let totalTarget = 0;
+      let hasAnyTarget = false;
+      channels.forEach(ch => {
+        const freq = (ch as ChannelRow).targetFrequency;
+        if (!freq) return;
+        const rate = FREQ_RATE[freq];
+        if (rate === undefined) return;
+        const teamChStores = tmStores.filter(s => s.channelId === ch.id).length;
+        if (teamChStores > 0) { totalTarget += teamChStores * rate; hasAnyTarget = true; }
+      });
+      const pct = hasAnyTarget && totalTarget > 0 ? Math.round((visits / totalTarget) * 100) : undefined;
+      return { id: tm.id, name: tm.name, storeCount: tmStores.length, visits, seen, missed, pct };
+    }).filter(t => t.storeCount > 0);
+  }, [teams, channels, mappedStores, visitMap]);
 
   // Sort handler
   function handleSort(col: SortCol) {
@@ -345,11 +410,10 @@ export default function DashboardPage() {
         <h1 className="text-2xl font-bold text-[var(--color-navy)] mb-6">Dashboard</h1>
 
         {/* Top cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-          <Card label="Total Stores" value={stores.length} icon="store" />
-          <Card label="Mapped Stores" value={mapped} icon="check" color={mapped === stores.length ? 'green' : 'amber'} />
-          <Card label="Unmapped" value={stores.length - mapped} icon="alert" color="red" />
-          <Card label="Total Visits" value={visitFilteredTotal} icon="visit" subtitle={dateFrom && dateTo ? `${dateFrom} to ${dateTo}` : undefined} />
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+          <Card label="Stores Visited" value={storesVisited} icon="check" color="green" subtitle={`of ${mapped} mapped`} />
+          <Card label="Stores Missed (Month)" value={storesMissed} icon="alert" color={storesMissed > 0 ? 'red' : 'green'} subtitle={dateFrom && dateTo ? `${formatDate(dateFrom)} \u2013 ${formatDate(dateTo)}` : undefined} />
+          <Card label="Stores Missing (Quarter)" value={storesMissingQuarter} icon="alert" color={storesMissingQuarter > 0 ? 'amber' : 'green'} subtitle="0 visits in quarter" />
         </div>
 
         {/* Admin visit upload section */}
@@ -412,7 +476,85 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Grid */}
+        {/* Channel Performance */}
+        {!fetching && channelPerf.length > 0 && (
+          <div className="bg-white rounded-lg border border-gray-200 overflow-hidden mb-4">
+            <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
+              <h2 className="text-sm font-bold text-[var(--color-navy)]">Channel Performance</h2>
+            </div>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-[var(--color-navy)] text-white text-left">
+                  <th className="px-3 py-2 font-medium">Channel</th>
+                  <th className="px-3 py-2 font-medium text-right">Visits</th>
+                  <th className="px-3 py-2 font-medium text-right">Stores Seen</th>
+                  <th className="px-3 py-2 font-medium text-right">Stores Missed</th>
+                  <th className="px-3 py-2 font-medium text-right">% to Target</th>
+                </tr>
+              </thead>
+              <tbody>
+                {channelPerf.map(cp => (
+                  <tr key={cp.id} className="border-t border-gray-100 hover:bg-gray-50">
+                    <td className="px-3 py-2 font-medium">{cp.name}</td>
+                    <td className="px-3 py-2 text-right">{cp.visits.toLocaleString()}</td>
+                    <td className="px-3 py-2 text-right text-green-600 font-medium">{cp.seen}</td>
+                    <td className="px-3 py-2 text-right text-red-600 font-medium">{cp.missed}</td>
+                    <td className="px-3 py-2 text-right">
+                      {cp.pct !== undefined ? (
+                        <span className={`inline-block min-w-[48px] text-center px-2 py-0.5 rounded text-xs font-bold ${cp.pct >= 100 ? 'bg-green-100 text-green-700' : cp.pct >= 50 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
+                          {cp.pct}%
+                        </span>
+                      ) : (
+                        <span className="text-gray-400">{'\u2014'}</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* Team Performance */}
+        {!fetching && teamPerf.length > 0 && (
+          <div className="bg-white rounded-lg border border-gray-200 overflow-hidden mb-4">
+            <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
+              <h2 className="text-sm font-bold text-[var(--color-navy)]">Team Performance</h2>
+            </div>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-[var(--color-navy)] text-white text-left">
+                  <th className="px-3 py-2 font-medium">Team</th>
+                  <th className="px-3 py-2 font-medium text-right">Visits</th>
+                  <th className="px-3 py-2 font-medium text-right">Stores Seen</th>
+                  <th className="px-3 py-2 font-medium text-right">Stores Missed</th>
+                  <th className="px-3 py-2 font-medium text-right">% to Target</th>
+                </tr>
+              </thead>
+              <tbody>
+                {teamPerf.map(tp => (
+                  <tr key={tp.id} className="border-t border-gray-100 hover:bg-gray-50">
+                    <td className="px-3 py-2 font-medium">{tp.name}</td>
+                    <td className="px-3 py-2 text-right">{tp.visits.toLocaleString()}</td>
+                    <td className="px-3 py-2 text-right text-green-600 font-medium">{tp.seen}</td>
+                    <td className="px-3 py-2 text-right text-red-600 font-medium">{tp.missed}</td>
+                    <td className="px-3 py-2 text-right">
+                      {tp.pct !== undefined ? (
+                        <span className={`inline-block min-w-[48px] text-center px-2 py-0.5 rounded text-xs font-bold ${tp.pct >= 100 ? 'bg-green-100 text-green-700' : tp.pct >= 50 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
+                          {tp.pct}%
+                        </span>
+                      ) : (
+                        <span className="text-gray-400">{'\u2014'}</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* Store Grid */}
         {fetching ? (
           <div className="text-center text-gray-400 py-12">Loading stores...</div>
         ) : (

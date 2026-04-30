@@ -17,7 +17,7 @@ export async function POST(req: Request) {
   if (!admin) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
   try {
-    const { name } = await req.json();
+    const { name, targetFrequency } = await req.json();
     if (!name) return NextResponse.json({ error: 'Name required' }, { status: 400 });
 
     const channels = await loadChannels();
@@ -28,6 +28,7 @@ export async function POST(req: Request) {
     const newChannel: Channel = {
       id: crypto.randomUUID(),
       name,
+      ...(targetFrequency ? { targetFrequency } : {}),
       createdAt: new Date().toISOString(),
     };
     channels.push(newChannel);

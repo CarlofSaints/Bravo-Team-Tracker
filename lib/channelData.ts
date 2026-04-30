@@ -3,6 +3,7 @@ import { readJson, writeJson } from './blob';
 export interface Channel {
   id: string;
   name: string;
+  targetFrequency?: string;
   createdAt: string;
 }
 
