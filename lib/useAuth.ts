@@ -31,6 +31,7 @@ export function useAuth(requiredRole?: string | string[]) {
     try {
       const s: Session = JSON.parse(raw);
       if (s.forcePasswordChange) {
+        setSession(s);
         router.replace('/account?change-password=1');
         setLoading(false);
         return;
