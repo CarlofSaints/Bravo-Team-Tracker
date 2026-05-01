@@ -139,7 +139,7 @@ export default function UsersPage() {
                 <Field label="Name" value={fName} onChange={setFName} />
                 <Field label="Surname" value={fSurname} onChange={setFSurname} />
                 <Field label="Email" value={fEmail} onChange={setFEmail} type="email" />
-                <Field label={editId ? 'New Password (blank = keep)' : 'Password'} value={fPassword} onChange={setFPassword} type="password" />
+                <Field label={editId ? 'New Password (blank = keep)' : 'Password'} value={fPassword} onChange={setFPassword} />
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
                   <select value={fRole} onChange={e => setFRole(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[var(--color-navy)]">
