@@ -11,6 +11,10 @@ export default function LoginPage() {
   const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [forgotMode, setForgotMode] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetLoading, setResetLoading] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -51,6 +55,68 @@ export default function LoginPage() {
         <div className="bg-white rounded-xl shadow-2xl p-8">
           <h1 className="text-xl font-bold text-[var(--color-navy)] text-center mb-6">Team Tracker</h1>
 
+          {forgotMode ? (
+            <div className="flex flex-col gap-4">
+              {resetSent ? (
+                <>
+                  <div className="text-green-700 text-sm bg-green-50 px-3 py-2 rounded-lg">
+                    If that email is registered, a reset has been sent.
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => { setForgotMode(false); setResetSent(false); setResetEmail(''); }}
+                    className="text-sm text-[var(--color-navy)] hover:underline text-center"
+                  >
+                    Back to login
+                  </button>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm text-gray-600 text-center">Enter your email address and we&apos;ll send you a temporary password.</p>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                    <input
+                      type="email"
+                      value={resetEmail}
+                      onChange={e => setResetEmail(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-navy)] focus:border-transparent"
+                      required
+                      autoFocus
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    disabled={resetLoading || !resetEmail}
+                    onClick={async () => {
+                      setResetLoading(true);
+                      try {
+                        await fetch('/api/auth/forgot-password', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ email: resetEmail }),
+                        });
+                        setResetSent(true);
+                      } catch {
+                        setResetSent(true);
+                      } finally {
+                        setResetLoading(false);
+                      }
+                    }}
+                    className="w-full py-2.5 bg-[var(--color-navy)] text-white rounded-lg text-sm font-medium hover:bg-[var(--color-navy-light)] transition-colors disabled:opacity-50"
+                  >
+                    {resetLoading ? 'Sending...' : 'Send Reset'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setForgotMode(false); setResetEmail(''); }}
+                    className="text-sm text-[var(--color-navy)] hover:underline text-center"
+                  >
+                    Back to login
+                  </button>
+                </>
+              )}
+            </div>
+          ) : (
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
@@ -104,7 +170,16 @@ export default function LoginPage() {
             >
               {loading ? 'Signing in...' : 'Sign In'}
             </button>
+
+            <button
+              type="button"
+              onClick={() => setForgotMode(true)}
+              className="text-sm text-gray-500 hover:text-[var(--color-navy)] text-center"
+            >
+              Forgot Password?
+            </button>
           </form>
+          )}
         </div>
 
         <p className="text-center text-gray-500 text-xs mt-6">Powered by OuterJoin</p>
