@@ -247,13 +247,30 @@ export default function DashboardPage() {
   const mappedStores = useMemo(() => stores.filter(s => s.perigeeStoreCode !== 'Not Mapped'), [stores]);
   const mapped = mappedStores.length;
 
-  // Card computations
-  const storesVisited = useMemo(() => mappedStores.filter(s => (visitMap[s.perigeeStoreCode] || 0) > 0).length, [mappedStores, visitMap]);
-  const storesMissed = mapped - storesVisited;
-  const storesMissingQuarter = useMemo(() => mappedStores.filter(s => !(quarterVisitMap[s.perigeeStoreCode])).length, [mappedStores, quarterVisitMap]);
-
   // Frequency → monthly rate
   const FREQ_RATE: Record<string, number> = { weekly: 4, monthly_3: 3, monthly_2: 2, monthly_1: 1, bimonthly: 0.5, quarterly: 0.333, biannual: 0.167, annual: 0.083 };
+
+  // Monthly frequencies (≥1 visit/month expected)
+  const MONTHLY_FREQS = new Set(['weekly', 'monthly_3', 'monthly_2', 'monthly_1']);
+
+  // Channel frequency lookup: channelId → targetFrequency
+  const channelFreqMap = useMemo(() => {
+    const m: Record<string, string> = {};
+    channels.forEach(c => { if ((c as ChannelRow).targetFrequency) m[c.id] = (c as ChannelRow).targetFrequency!; });
+    return m;
+  }, [channels]);
+
+  // Card computations
+  const storesVisited = useMemo(() => mappedStores.filter(s => (visitMap[s.perigeeStoreCode] || 0) > 0).length, [mappedStores, visitMap]);
+  // "Missed (Month)" — only count stores whose channel expects monthly+ visits
+  const storesMissed = useMemo(() => {
+    return mappedStores.filter(s => {
+      const freq = channelFreqMap[s.channelId];
+      if (!freq || !MONTHLY_FREQS.has(freq)) return false; // skip less-frequent channels
+      return (visitMap[s.perigeeStoreCode] || 0) === 0;
+    }).length;
+  }, [mappedStores, visitMap, channelFreqMap]);
+  const storesMissingQuarter = useMemo(() => mappedStores.filter(s => !(quarterVisitMap[s.perigeeStoreCode])).length, [mappedStores, quarterVisitMap]);
 
   // Channel performance grid data
   const channelPerf = useMemo(() => {
@@ -448,7 +465,7 @@ export default function DashboardPage() {
         {/* Top cards */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
           <Card label="Stores Visited" value={storesVisited} icon="check" color="green" subtitle={`of ${mapped} mapped`} />
-          <Card label="Stores Missed (Month)" value={storesMissed} icon="alert" color={storesMissed > 0 ? 'red' : 'green'} subtitle={dateFrom && dateTo ? `${formatDate(dateFrom)} \u2013 ${formatDate(dateTo)}` : undefined} />
+          <Card label="Stores Missed (Month)" value={storesMissed} icon="alert" color={storesMissed > 0 ? 'red' : 'green'} subtitle={dateFrom && dateTo ? `Monthly+ channels \u00b7 ${formatDate(dateFrom)} \u2013 ${formatDate(dateTo)}` : 'Monthly+ channels only'} />
           <Card label="Stores Missing (Quarter)" value={storesMissingQuarter} icon="alert" color={storesMissingQuarter > 0 ? 'amber' : 'green'} subtitle="0 visits in quarter" />
         </div>
 

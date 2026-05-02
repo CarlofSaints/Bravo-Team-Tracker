@@ -136,7 +136,7 @@ export default function Sidebar({ session, onLogout }: SidebarProps) {
               <button
                 onClick={() => setCcExpanded(p => !p)}
                 className={`w-full flex items-center justify-between px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                  ['/channels', '/teams', '/regions', '/stores'].includes(pathname)
+                  ['/channels', '/teams', '/regions', '/stores', '/settings'].includes(pathname)
                     ? 'bg-white/10 text-white'
                     : 'text-gray-300 hover:bg-white/10 hover:text-white'
                 }`}
@@ -155,6 +155,7 @@ export default function Sidebar({ session, onLogout }: SidebarProps) {
                   <NavLink href="/teams" label="Teams" active={pathname === '/teams'} />
                   <NavLink href="/regions" label="Regions" active={pathname === '/regions'} />
                   <NavLink href="/stores" label="Store Mapper" active={pathname === '/stores'} />
+                  <NavLink href="/settings" label="Settings" active={pathname === '/settings'} />
                 </div>
               )}
             </div>

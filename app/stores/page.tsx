@@ -289,6 +289,9 @@ export default function StoresPage() {
   const [justMappedId, setJustMappedId] = useState<string | null>(null);
   const [justMappedName, setJustMappedName] = useState<string | null>(null);
 
+  // Dynamic mapping emails from settings
+  const [mappingEmails, setMappingEmails] = useState<string[]>(['support@perigeeapp.co.za']);
+
   const reload = useCallback(() => {
     setFetching(true);
     Promise.all([
@@ -316,6 +319,11 @@ export default function StoresPage() {
     if (!session) return;
     reload();
     fetchPerigeeCount();
+    // Fetch mapping emails from settings
+    authFetch('/api/settings', { cache: 'no-store' })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d?.mappingEmails?.length) setMappingEmails(d.mappingEmails); })
+      .catch(() => {});
   }, [session, reload, fetchPerigeeCount]);
 
   // Score
@@ -643,7 +651,8 @@ export default function StoresPage() {
     const body = encodeURIComponent(
       `Hi Perigee Support,\n\nWe are unable to find the following store in the Perigee system and would like to request that it be added:\n\nStore Name: ${storeName}\nArea: ${storeArea || 'N/A'}\n\nPlease let us know once this has been done.\n\nThank you`
     );
-    window.open(`mailto:support@perigeeapp.co.za?subject=${subject}&body=${body}`, '_blank');
+    const to = mappingEmails.join(',');
+    window.open(`mailto:${to}?subject=${subject}&body=${body}`, '_blank');
 
     // Mark store as email sent
     if (mappingStore) {
