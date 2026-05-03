@@ -102,9 +102,16 @@ export default function DashboardPage() {
   const chResizingRef = useRef<{ colIdx: number; startX: number; startW: number } | null>(null);
 
   // Team perf grid: collapse + column widths
+  // Columns: Team, Total Stores, Visits, Total Seen, Seen TM, Seen TQTR, Seen 2+, Missed, % to Target
   const [tmPerfCollapsed, setTmPerfCollapsed] = useState(false);
-  const [tmPerfWidths, setTmPerfWidths] = useState([200, 100, 120, 130, 120]);
+  const [tmPerfWidths, setTmPerfWidths] = useState([200, 90, 80, 100, 80, 90, 70, 90, 100]);
   const tmResizingRef = useRef<{ colIdx: number; startX: number; startW: number } | null>(null);
+
+  // Rep perf grid: collapse + column widths
+  // Columns: Rep, Team, Stores, Visits, Total Seen, Seen TM, Seen TQTR, Seen 2+, Missed, % to Target
+  const [rpPerfCollapsed, setRpPerfCollapsed] = useState(false);
+  const [rpPerfWidths, setRpPerfWidths] = useState([160, 130, 70, 70, 90, 70, 80, 65, 70, 90]);
+  const rpResizingRef = useRef<{ colIdx: number; startX: number; startW: number } | null>(null);
 
   // Fetch visits
   const fetchVisits = useCallback(() => {
@@ -355,9 +362,12 @@ export default function DashboardPage() {
     return teams.map(tm => {
       const tmStores = mappedStores.filter(s => s.teamId === tm.id);
       const visits = tmStores.reduce((sum, s) => sum + (visitMap[s.perigeeStoreCode] || 0), 0);
-      const seen = tmStores.filter(s => (visitMap[s.perigeeStoreCode] || 0) > 0).length;
-      const missed = tmStores.length - seen;
-      // Aggregate target across channels for this team's stores
+      const totalSeen = tmStores.filter(s => (visitMap[s.perigeeStoreCode] || 0) > 0).length;
+      const missed = tmStores.length - totalSeen;
+      const seenTM = tmStores.filter(s => (monthVisitMap[s.perigeeStoreCode] || 0) > 0).length;
+      const seenTQTR = tmStores.filter(s => (quarterVisitMap[s.perigeeStoreCode] || 0) > 0).length;
+      const seen2Plus = tmStores.filter(s => (visitMap[s.perigeeStoreCode] || 0) > 2).length;
+      // Aggregate target across channels × months in range
       let totalTarget = 0;
       let hasAnyTarget = false;
       channels.forEach(ch => {
@@ -366,12 +376,57 @@ export default function DashboardPage() {
         const rate = FREQ_RATE[freq];
         if (rate === undefined) return;
         const teamChStores = tmStores.filter(s => s.channelId === ch.id).length;
-        if (teamChStores > 0) { totalTarget += teamChStores * rate; hasAnyTarget = true; }
+        if (teamChStores > 0) { totalTarget += teamChStores * rate * monthsInRange; hasAnyTarget = true; }
       });
       const pct = hasAnyTarget && totalTarget > 0 ? Math.round((visits / totalTarget) * 100) : undefined;
-      return { id: tm.id, name: tm.name, storeCount: tmStores.length, visits, seen, missed, pct };
+      return { id: tm.id, name: tm.name, storeCount: tmStores.length, visits, totalSeen, missed, seenTM, seenTQTR, seen2Plus, pct };
     }).filter(t => t.storeCount > 0);
-  }, [teams, channels, mappedStores, visitMap]);
+  }, [teams, channels, mappedStores, visitMap, monthVisitMap, quarterVisitMap, monthsInRange]);
+
+  // Rep performance grid data
+  const repPerf = useMemo(() => {
+    // Get all users who are reps (assigned to at least one store or have visits)
+    const repIds = new Set<string>();
+    mappedStores.forEach(s => { if (s.repUserId) repIds.add(s.repUserId); });
+
+    return Array.from(repIds).map(uid => {
+      const user = users.find(u => u.id === uid);
+      if (!user) return null;
+      const repStores = mappedStores.filter(s => s.repUserId === uid);
+      const visits = repStores.reduce((sum, s) => sum + (visitMap[s.perigeeStoreCode] || 0), 0);
+      const totalSeen = repStores.filter(s => (visitMap[s.perigeeStoreCode] || 0) > 0).length;
+      const missed = repStores.length - totalSeen;
+      const seenTM = repStores.filter(s => (monthVisitMap[s.perigeeStoreCode] || 0) > 0).length;
+      const seenTQTR = repStores.filter(s => (quarterVisitMap[s.perigeeStoreCode] || 0) > 0).length;
+      const seen2Plus = repStores.filter(s => (visitMap[s.perigeeStoreCode] || 0) > 2).length;
+      const teamName = user.teamId ? (nameMap[`team:${user.teamId}`] || '\u2014') : '\u2014';
+      // Aggregate target across channels
+      let totalTarget = 0;
+      let hasAnyTarget = false;
+      channels.forEach(ch => {
+        const freq = (ch as ChannelRow).targetFrequency;
+        if (!freq) return;
+        const rate = FREQ_RATE[freq];
+        if (rate === undefined) return;
+        const repChStores = repStores.filter(s => s.channelId === ch.id).length;
+        if (repChStores > 0) { totalTarget += repChStores * rate * monthsInRange; hasAnyTarget = true; }
+      });
+      const pct = hasAnyTarget && totalTarget > 0 ? Math.round((visits / totalTarget) * 100) : undefined;
+      return {
+        id: uid,
+        name: `${user.name} ${user.surname}`.trim(),
+        teamName,
+        storeCount: repStores.length,
+        visits,
+        totalSeen,
+        missed,
+        seenTM,
+        seenTQTR,
+        seen2Plus,
+        pct,
+      };
+    }).filter(Boolean) as { id: string; name: string; teamName: string; storeCount: number; visits: number; totalSeen: number; missed: number; seenTM: number; seenTQTR: number; seen2Plus: number; pct: number | undefined }[];
+  }, [mappedStores, users, visitMap, monthVisitMap, quarterVisitMap, channels, nameMap, monthsInRange]);
 
   // Sort handler
   function handleSort(col: SortCol) {
@@ -433,6 +488,19 @@ export default function DashboardPage() {
       setTmPerfWidths(prev => { const next = [...prev]; next[tmResizingRef.current!.colIdx] = Math.max(60, tmResizingRef.current!.startW + diff); return next; });
     }
     function onUp() { tmResizingRef.current = null; document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); }
+    document.addEventListener('mousemove', onMove); document.addEventListener('mouseup', onUp);
+  }
+
+  // Rep perf resize
+  function handleRpResizeStart(e: React.MouseEvent, colIdx: number) {
+    e.preventDefault(); e.stopPropagation();
+    rpResizingRef.current = { colIdx, startX: e.clientX, startW: rpPerfWidths[colIdx] };
+    function onMove(ev: MouseEvent) {
+      if (!rpResizingRef.current) return;
+      const diff = ev.clientX - rpResizingRef.current.startX;
+      setRpPerfWidths(prev => { const next = [...prev]; next[rpResizingRef.current!.colIdx] = Math.max(50, rpResizingRef.current!.startW + diff); return next; });
+    }
+    function onUp() { rpResizingRef.current = null; document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); }
     document.addEventListener('mousemove', onMove); document.addEventListener('mouseup', onUp);
   }
 
@@ -572,8 +640,8 @@ export default function DashboardPage() {
                 <table className="text-sm" style={{ tableLayout: 'fixed', width: tmPerfWidths.reduce((a, b) => a + b, 0) }}>
                   <thead>
                     <tr className="bg-[var(--color-navy)] text-white text-left">
-                      {['Team', 'Visits', 'Stores Seen', 'Stores Missed', '% to Target'].map((label, idx) => (
-                        <th key={label} className={`px-3 py-2 font-medium relative select-none ${idx > 0 ? 'text-right' : ''}`} style={{ width: tmPerfWidths[idx] }}>
+                      {['Team', 'Total Stores', 'Visits', 'Total Seen', 'Seen TM', 'Seen TQTR', 'Seen 2+', 'Missed', '% to Target'].map((label, idx) => (
+                        <th key={label} className={`px-3 py-2 font-medium relative select-none text-xs ${idx > 0 ? 'text-right' : ''}`} style={{ width: tmPerfWidths[idx] }}>
                           {label}
                           <div className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-white/30" onMouseDown={e => handleTmResizeStart(e, idx)} />
                         </th>
@@ -584,13 +652,75 @@ export default function DashboardPage() {
                     {teamPerf.map(tp => (
                       <tr key={tp.id} className="border-t border-gray-100 hover:bg-gray-50">
                         <td className="px-3 py-2 font-medium truncate" style={{ width: tmPerfWidths[0] }}>{tp.name}</td>
-                        <td className="px-3 py-2 text-right" style={{ width: tmPerfWidths[1] }}>{tp.visits.toLocaleString()}</td>
-                        <td className="px-3 py-2 text-right text-green-600 font-medium" style={{ width: tmPerfWidths[2] }}>{tp.seen}</td>
-                        <td className="px-3 py-2 text-right text-red-600 font-medium" style={{ width: tmPerfWidths[3] }}>{tp.missed}</td>
-                        <td className="px-3 py-2 text-right" style={{ width: tmPerfWidths[4] }}>
+                        <td className="px-3 py-2 text-right" style={{ width: tmPerfWidths[1] }}>{tp.storeCount}</td>
+                        <td className="px-3 py-2 text-right" style={{ width: tmPerfWidths[2] }}>{tp.visits.toLocaleString()}</td>
+                        <td className="px-3 py-2 text-right text-green-600 font-medium" style={{ width: tmPerfWidths[3] }}>{tp.totalSeen}</td>
+                        <td className="px-3 py-2 text-right text-blue-600 font-medium" style={{ width: tmPerfWidths[4] }}>{tp.seenTM}</td>
+                        <td className="px-3 py-2 text-right text-indigo-600 font-medium" style={{ width: tmPerfWidths[5] }}>{tp.seenTQTR}</td>
+                        <td className="px-3 py-2 text-right text-emerald-600 font-medium" style={{ width: tmPerfWidths[6] }}>{tp.seen2Plus}</td>
+                        <td className="px-3 py-2 text-right text-red-600 font-medium" style={{ width: tmPerfWidths[7] }}>{tp.missed}</td>
+                        <td className="px-3 py-2 text-right" style={{ width: tmPerfWidths[8] }}>
                           {tp.pct !== undefined ? (
                             <span className={`inline-block min-w-[48px] text-center px-2 py-0.5 rounded text-xs font-bold ${tp.pct >= 100 ? 'bg-green-100 text-green-700' : tp.pct >= 50 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
                               {tp.pct}%
+                            </span>
+                          ) : (
+                            <span className="text-gray-400">{'\u2014'}</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Rep Performance */}
+        {!fetching && repPerf.length > 0 && (
+          <div className="bg-white rounded-lg border border-gray-200 overflow-hidden mb-4">
+            <div
+              className="px-4 py-3 bg-gray-50 flex items-center justify-between cursor-pointer select-none"
+              onClick={() => setRpPerfCollapsed(c => !c)}
+            >
+              <div className="flex items-center gap-2.5">
+                <svg className={`w-4 h-4 text-gray-400 transition-transform ${rpPerfCollapsed ? '' : 'rotate-90'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+                <h2 className="text-sm font-bold text-[var(--color-navy)]">Rep Performance</h2>
+                <span className="px-2 py-0.5 text-[10px] font-bold bg-gray-100 text-gray-500 rounded-full">{repPerf.length} {repPerf.length === 1 ? 'rep' : 'reps'}</span>
+              </div>
+            </div>
+            {!rpPerfCollapsed && (
+              <div className="overflow-x-auto">
+                <table className="text-sm" style={{ tableLayout: 'fixed', width: rpPerfWidths.reduce((a, b) => a + b, 0) }}>
+                  <thead>
+                    <tr className="bg-[var(--color-navy)] text-white text-left">
+                      {['Rep', 'Team', 'Stores', 'Visits', 'Total Seen', 'Seen TM', 'Seen TQTR', 'Seen 2+', 'Missed', '% to Target'].map((label, idx) => (
+                        <th key={label} className={`px-3 py-2 font-medium relative select-none text-xs ${idx > 1 ? 'text-right' : ''}`} style={{ width: rpPerfWidths[idx] }}>
+                          {label}
+                          <div className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-white/30" onMouseDown={e => handleRpResizeStart(e, idx)} />
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {repPerf.map(rp => (
+                      <tr key={rp.id} className="border-t border-gray-100 hover:bg-gray-50">
+                        <td className="px-3 py-2 font-medium truncate" style={{ width: rpPerfWidths[0] }}>{rp.name}</td>
+                        <td className="px-3 py-2 text-gray-600 truncate text-xs" style={{ width: rpPerfWidths[1] }}>{rp.teamName}</td>
+                        <td className="px-3 py-2 text-right" style={{ width: rpPerfWidths[2] }}>{rp.storeCount}</td>
+                        <td className="px-3 py-2 text-right" style={{ width: rpPerfWidths[3] }}>{rp.visits.toLocaleString()}</td>
+                        <td className="px-3 py-2 text-right text-green-600 font-medium" style={{ width: rpPerfWidths[4] }}>{rp.totalSeen}</td>
+                        <td className="px-3 py-2 text-right text-blue-600 font-medium" style={{ width: rpPerfWidths[5] }}>{rp.seenTM}</td>
+                        <td className="px-3 py-2 text-right text-indigo-600 font-medium" style={{ width: rpPerfWidths[6] }}>{rp.seenTQTR}</td>
+                        <td className="px-3 py-2 text-right text-emerald-600 font-medium" style={{ width: rpPerfWidths[7] }}>{rp.seen2Plus}</td>
+                        <td className="px-3 py-2 text-right text-red-600 font-medium" style={{ width: rpPerfWidths[8] }}>{rp.missed}</td>
+                        <td className="px-3 py-2 text-right" style={{ width: rpPerfWidths[9] }}>
+                          {rp.pct !== undefined ? (
+                            <span className={`inline-block min-w-[48px] text-center px-2 py-0.5 rounded text-xs font-bold ${rp.pct >= 100 ? 'bg-green-100 text-green-700' : rp.pct >= 50 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
+                              {rp.pct}%
                             </span>
                           ) : (
                             <span className="text-gray-400">{'\u2014'}</span>

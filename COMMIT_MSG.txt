@@ -1,13 +1,8 @@
-Data Import page, channel grid, bulk email + store rep sync
+Rep Performance grid + fix Team Performance target calculation
 
-- Move visit upload to /data-import under Control Centre
-- Channel Performance grid: Frequency, Total Stores, Seen TM,
-  Seen TQTR, Seen 2+ columns; rename Stores Seen to Total Seen
-- Move filter bar above percentage and count cards
-- Fetch current-month visits for TM column
-- /api/users/bulk-email: sync user emails from visit data
-- /api/stores/sync-reps: auto-assign rep, team, region to stores
-  based on most-frequent visitor from visit data
-- Sync buttons on Data Import page with results tables
+- Add Rep Performance grid (10 columns: Rep, Team, Stores, Visits,
+  Total Seen, Seen TM, Seen TQTR, Seen 2+, Missed, % to Target)
+- Fix Team Performance grid: scale targets by monthsInRange per
+  channel frequency, add TM/TQTR/Seen2+ columns (5 → 9 cols)
 
 Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
