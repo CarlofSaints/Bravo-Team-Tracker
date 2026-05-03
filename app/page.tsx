@@ -275,15 +275,49 @@ export default function DashboardPage() {
 
   // Percentage cards
   const coveragePct = mapped > 0 ? Math.round((storesVisited / mapped) * 100) : 0;
-  const targetVisits = useMemo(() => {
-    let total = 0;
+
+  // How many months does the date range span?
+  const monthsInRange = useMemo(() => {
+    if (!dateFrom || !dateTo) return 1;
+    const f = new Date(dateFrom);
+    const t = new Date(dateTo);
+    const months = (t.getFullYear() - f.getFullYear()) * 12 + (t.getMonth() - f.getMonth()) + 1;
+    return Math.max(1, months);
+  }, [dateFrom, dateTo]);
+
+  // Set of store codes that belong to channels WITH a target frequency
+  const targetStoreCodes = useMemo(() => {
+    const codes = new Set<string>();
     mappedStores.forEach(s => {
       const freq = channelFreqMap[s.channelId];
-      if (freq && FREQ_RATE[freq] !== undefined) total += FREQ_RATE[freq];
+      if (freq && FREQ_RATE[freq] !== undefined) codes.add(s.perigeeStoreCode);
     });
-    return Math.round(total);
+    return codes;
   }, [mappedStores, channelFreqMap]);
-  const targetPct = targetVisits > 0 ? Math.round((visitFilteredTotal / targetVisits) * 100) : 0;
+
+  // Target = monthly rate per store × months in range
+  const targetVisits = useMemo(() => {
+    let monthlyTotal = 0;
+    mappedStores.forEach(s => {
+      const freq = channelFreqMap[s.channelId];
+      if (freq && FREQ_RATE[freq] !== undefined) monthlyTotal += FREQ_RATE[freq];
+    });
+    return Math.round(monthlyTotal * monthsInRange);
+  }, [mappedStores, channelFreqMap, monthsInRange]);
+
+  // Only count visits for stores that have a target (fair comparison)
+  const targetedVisits = useMemo(() => {
+    let count = 0;
+    mappedStores.forEach(s => {
+      if (targetStoreCodes.has(s.perigeeStoreCode)) {
+        count += visitMap[s.perigeeStoreCode] || 0;
+      }
+    });
+    return count;
+  }, [mappedStores, visitMap, targetStoreCodes]);
+
+  const channelsWithTarget = useMemo(() => channels.filter(c => c.targetFrequency && FREQ_RATE[c.targetFrequency] !== undefined).length, [channels]);
+  const targetPct = targetVisits > 0 ? Math.round((targetedVisits / targetVisits) * 100) : 0;
 
   // Channel performance grid data
   const channelPerf = useMemo(() => {
@@ -478,7 +512,7 @@ export default function DashboardPage() {
         {/* Percentage cards */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
           <PctCard label="Store Coverage" pct={coveragePct} subtitle={`${storesVisited} of ${mapped} stores visited`} color={coveragePct >= 80 ? 'green' : coveragePct >= 50 ? 'amber' : 'red'} />
-          <PctCard label="Target Achievement" pct={targetPct} subtitle={`${visitFilteredTotal.toLocaleString()} of ${targetVisits.toLocaleString()} target visits`} color={targetPct >= 100 ? 'green' : targetPct >= 50 ? 'amber' : 'red'} />
+          <PctCard label="Target Achievement" pct={targetPct} subtitle={`${targetedVisits.toLocaleString()} of ${targetVisits.toLocaleString()} target \u00b7 ${monthsInRange}mo${channelsWithTarget < channels.length ? ` \u00b7 ${channelsWithTarget}/${channels.length} channels` : ''}`} color={targetPct >= 100 ? 'green' : targetPct >= 50 ? 'amber' : 'red'} />
           <div className="bg-white rounded-lg border border-gray-200 p-4 flex items-center gap-4">
             <div className="w-12 h-12 rounded-lg flex items-center justify-center bg-blue-50 text-blue-700">
               <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" /></svg>

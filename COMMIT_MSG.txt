@@ -1,6 +1,7 @@
-Fix default date range to show all YTD visits
+Fix target achievement calculation
 
-- Default from Jan 1 instead of current month start
-- Visits spanning Nov 2025-May 2026 now all visible in cards and grids
+- Scale monthly target by months in date range
+- Only count visits from stores with a target frequency
+- Show months and channel coverage in subtitle
 
 Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
