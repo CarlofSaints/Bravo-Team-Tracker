@@ -1,7 +1,11 @@
-Fix target achievement calculation
+Data Import page, enhanced channel grid, bulk email sync
 
-- Scale monthly target by months in date range
-- Only count visits from stores with a target frequency
-- Show months and channel coverage in subtitle
+- Move visit upload to /data-import under Control Centre
+- Channel Performance grid: add Frequency, Total Stores, Seen TM,
+  Seen TQTR, Seen 2+ columns; rename Stores Seen to Total Seen
+- Move filter bar above percentage and count cards
+- Fetch current-month visits for TM column
+- Add /api/users/bulk-email: sync user emails from visit data
+- Sync Emails button on Data Import page with results table
 
 Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>

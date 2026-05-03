@@ -73,13 +73,8 @@ export default function DashboardPage() {
   const [dateFrom, setDateFrom] = useState(defaultFrom);
   const [dateTo, setDateTo] = useState(defaultTo);
 
-  // Visits upload (admin only)
-  const [visitUploading, setVisitUploading] = useState(false);
-  const [visitMsg, setVisitMsg] = useState('');
-  const [visitMsgType, setVisitMsgType] = useState<'success' | 'error' | ''>('');
-  const [clearingVisits, setClearingVisits] = useState(false);
-  const [dragOver, setDragOver] = useState(false);
-  const visitInputRef = useRef<HTMLInputElement>(null);
+  // Month visits (for "Seen TM" columns)
+  const [monthVisitMap, setMonthVisitMap] = useState<Record<string, number>>({});
 
   // Pagination
   const PAGE_SIZE = 400;
@@ -101,8 +96,9 @@ export default function DashboardPage() {
   const resizingRef = useRef<{ colIdx: number; startX: number; startW: number } | null>(null);
 
   // Channel perf grid: collapse + column widths
+  // Columns: Channel, Frequency, Total Stores, Visits, Total Seen, Seen TM, Seen TQTR, Seen 2+, Missed, % to Target
   const [chPerfCollapsed, setChPerfCollapsed] = useState(false);
-  const [chPerfWidths, setChPerfWidths] = useState([200, 100, 120, 130, 120]);
+  const [chPerfWidths, setChPerfWidths] = useState([180, 100, 90, 80, 100, 80, 90, 70, 90, 100]);
   const chResizingRef = useRef<{ colIdx: number; startX: number; startW: number } | null>(null);
 
   // Team perf grid: collapse + column widths
@@ -151,7 +147,7 @@ export default function DashboardPage() {
     fetchVisits();
   }, [session, fetchVisits]);
 
-  // Fetch quarter visits for the "Missing" card
+  // Fetch quarter visits for the "Missing" card + channel grid TQTR
   useEffect(() => {
     if (!session || !dateFrom) return;
     const d = new Date(dateFrom);
@@ -165,6 +161,19 @@ export default function DashboardPage() {
       .then(data => setQuarterVisitMap(data.byStoreCode || {}))
       .catch(() => {});
   }, [session, dateFrom]);
+
+  // Fetch current month visits for "Seen TM" column
+  useEffect(() => {
+    if (!session) return;
+    const now = new Date();
+    const mFrom = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+    const mTo = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const params = new URLSearchParams({ from: mFrom, to: mTo });
+    authFetch(`/api/visits?${params}`, { cache: 'no-store' })
+      .then(r => r.json())
+      .then(data => setMonthVisitMap(data.byStoreCode || {}))
+      .catch(() => {});
+  }, [session]);
 
   const nameMap = useMemo(() => {
     const m: Record<string, string> = {};
@@ -319,20 +328,27 @@ export default function DashboardPage() {
   const channelsWithTarget = useMemo(() => channels.filter(c => c.targetFrequency && FREQ_RATE[c.targetFrequency] !== undefined).length, [channels]);
   const targetPct = targetVisits > 0 ? Math.round((targetedVisits / targetVisits) * 100) : 0;
 
+  // Frequency display labels
+  const FREQ_LABELS: Record<string, string> = { weekly: 'Weekly', monthly_3: '3x/Month', monthly_2: '2x/Month', monthly_1: 'Monthly', bimonthly: 'Bimonthly', quarterly: 'Quarterly', biannual: 'Biannual', annual: 'Annual' };
+
   // Channel performance grid data
   const channelPerf = useMemo(() => {
     return channels.map(ch => {
       const chStores = mappedStores.filter(s => s.channelId === ch.id);
       const visits = chStores.reduce((sum, s) => sum + (visitMap[s.perigeeStoreCode] || 0), 0);
-      const seen = chStores.filter(s => (visitMap[s.perigeeStoreCode] || 0) > 0).length;
-      const missed = chStores.length - seen;
+      const totalSeen = chStores.filter(s => (visitMap[s.perigeeStoreCode] || 0) > 0).length;
+      const missed = chStores.length - totalSeen;
+      const seenTM = chStores.filter(s => (monthVisitMap[s.perigeeStoreCode] || 0) > 0).length;
+      const seenTQTR = chStores.filter(s => (quarterVisitMap[s.perigeeStoreCode] || 0) > 0).length;
+      const seen2Plus = chStores.filter(s => (visitMap[s.perigeeStoreCode] || 0) > 2).length;
       const freq = (ch as ChannelRow).targetFrequency;
+      const freqLabel = freq ? (FREQ_LABELS[freq] || freq) : '\u2014';
       const rate = freq ? FREQ_RATE[freq] : undefined;
-      const target = rate !== undefined ? chStores.length * rate : undefined;
+      const target = rate !== undefined ? Math.round(chStores.length * rate * monthsInRange) : undefined;
       const pct = target !== undefined && target > 0 ? Math.round((visits / target) * 100) : undefined;
-      return { id: ch.id, name: ch.name, storeCount: chStores.length, visits, seen, missed, pct };
+      return { id: ch.id, name: ch.name, freqLabel, storeCount: chStores.length, visits, totalSeen, missed, seenTM, seenTQTR, seen2Plus, pct };
     }).filter(c => c.storeCount > 0);
-  }, [channels, mappedStores, visitMap]);
+  }, [channels, mappedStores, visitMap, monthVisitMap, quarterVisitMap, monthsInRange]);
 
   // Team performance grid data
   const teamPerf = useMemo(() => {
@@ -420,83 +436,6 @@ export default function DashboardPage() {
     document.addEventListener('mousemove', onMove); document.addEventListener('mouseup', onUp);
   }
 
-  // Visits upload handler
-  async function handleVisitUpload(file: File) {
-    setVisitUploading(true); setVisitMsg('Parsing file...'); setVisitMsgType('');
-    try {
-      const XLSX = await import('xlsx');
-      const buffer = await file.arrayBuffer();
-      const wb = XLSX.read(buffer, { type: 'array' });
-      const sheet = wb.Sheets[wb.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '' });
-
-      const visits: { storeCode: string; checkInDate: string; repEmail: string; repName: string; status: string; visitDuration: string }[] = [];
-      for (const row of rows) {
-        const storeCode = String(row['Store Code'] || row['store_code'] || row['Store code'] || '').trim();
-        const rawDate = String(row['Check in date'] || row['Check In Date'] || row['check_in_date'] || '').trim();
-        const firstName = String(row['First Name'] || row['First name'] || row['first_name'] || '').trim();
-        const lastName = String(row['Last Name'] || row['Last name'] || row['last_name'] || '').trim();
-        const email = String(row['Email'] || row['email'] || '').trim();
-        const status = String(row['Status'] || row['status'] || '').trim();
-        const duration = String(row['Visit Duration'] || row['Visit duration'] || row['visit_duration'] || '').trim();
-
-        if (!storeCode || !rawDate) continue;
-
-        let checkInDate = rawDate;
-        const ddmmyyyy = rawDate.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
-        if (ddmmyyyy) {
-          const dd = ddmmyyyy[1].padStart(2, '0');
-          const mm = ddmmyyyy[2].padStart(2, '0');
-          const yyyy = ddmmyyyy[3];
-          checkInDate = `${yyyy}-${mm}-${dd}`;
-        }
-
-        visits.push({ storeCode, checkInDate, repEmail: email, repName: `${firstName} ${lastName}`.trim(), status, visitDuration: duration });
-      }
-
-      setVisitMsg(`Uploading ${visits.length.toLocaleString()} visits...`);
-
-      const json = JSON.stringify({ visits });
-      const blob = new Blob([json]);
-      const cs = new CompressionStream('gzip');
-      const compressedStream = blob.stream().pipeThrough(cs);
-      const compressedBlob = await new Response(compressedStream).blob();
-
-      const res = await authFetch('/api/visits/upload', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/gzip' },
-        body: compressedBlob,
-      });
-      const data = await res.json();
-      if (!res.ok) { setVisitMsg(data.error || 'Upload failed'); setVisitMsgType('error'); }
-      else {
-        setVisitMsg(`${data.totalVisits.toLocaleString()} visits imported`);
-        setVisitMsgType('success');
-        fetchVisits();
-      }
-    } catch (err) {
-      console.error('Visits upload error:', err);
-      setVisitMsg('Failed to parse or upload file'); setVisitMsgType('error');
-    }
-    finally { setVisitUploading(false); }
-  }
-
-  async function handleClearVisits() {
-    if (!confirm('Clear all visit data? This cannot be undone.')) return;
-    setClearingVisits(true);
-    try {
-      const res = await authFetch('/api/visits', { method: 'DELETE' });
-      if (res.ok) {
-        setVisitMsg('Visit data cleared'); setVisitMsgType('success');
-        setVisitMap({});
-        setLastVisitMap({});
-        setVisitTotal(0);
-        setVisitFilteredTotal(0);
-      }
-    } catch { /* ignore */ }
-    finally { setClearingVisits(false); }
-  }
-
   if (loading || !session) {
     return <div className="min-h-screen flex items-center justify-center text-gray-400">Loading...</div>;
   }
@@ -508,6 +447,28 @@ export default function DashboardPage() {
       <Sidebar session={session} onLogout={logout} />
       <main className="ml-64 p-6">
         <h1 className="text-2xl font-bold text-[var(--color-navy)] mb-6">Dashboard</h1>
+
+        {/* Filters */}
+        <div className="bg-white rounded-lg border border-gray-200 p-4 mb-4 flex flex-wrap gap-3 items-end">
+          <FilterSelect label="Channel" value={filterChannel} onChange={setFilterChannel} options={channels.map(c => ({ value: c.id, label: c.name }))} />
+          <FilterSelect label="Team" value={filterTeam} onChange={setFilterTeam} options={teams.map(t => ({ value: t.id, label: t.name }))} />
+          <FilterSelect label="Region" value={filterRegion} onChange={setFilterRegion} options={regions.map(r => ({ value: r.id, label: r.name }))} />
+          {users.length > 0 && (
+            <FilterSelect label="Rep" value={filterUser} onChange={setFilterUser} options={users.filter(u => u.teamId).map(u => ({ value: u.id, label: `${u.name} ${u.surname}` }))} />
+          )}
+          <div className="min-w-[130px]">
+            <label className="block text-xs font-medium text-gray-500 mb-1">From</label>
+            <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-[var(--color-navy)]" />
+          </div>
+          <div className="min-w-[130px]">
+            <label className="block text-xs font-medium text-gray-500 mb-1">To</label>
+            <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-[var(--color-navy)]" />
+          </div>
+          <div className="flex-1 min-w-[200px]">
+            <label className="block text-xs font-medium text-gray-500 mb-1">Search</label>
+            <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Store name, code..." className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-[var(--color-navy)]" />
+          </div>
+        </div>
 
         {/* Percentage cards */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
@@ -533,104 +494,6 @@ export default function DashboardPage() {
           <Card label="Stores Missing (Quarter)" value={storesMissingQuarter} icon="alert" color={storesMissingQuarter > 0 ? 'amber' : 'green'} subtitle="0 visits in quarter" />
         </div>
 
-        {/* Admin visit upload section — drag & drop */}
-        {isAdmin && (
-          <div className="bg-white rounded-lg border border-gray-200 p-4 mb-4">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <h2 className="text-sm font-bold text-[var(--color-navy)]">Import Visits (Perigee Export)</h2>
-                {visitTotal > 0 && !visitMsg && (
-                  <span className="text-[10px] font-medium text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">{visitTotal.toLocaleString()} visits stored</span>
-                )}
-              </div>
-              <div className="flex gap-2">
-                {visitTotal > 0 && (
-                  <button
-                    onClick={handleClearVisits}
-                    disabled={clearingVisits}
-                    className="text-xs text-red-400 hover:text-red-600 bg-gray-50 hover:bg-red-50 border border-gray-200 hover:border-red-200 rounded-lg py-1.5 px-3 transition-colors disabled:opacity-50"
-                  >
-                    {clearingVisits ? 'Clearing...' : 'Clear All Visits'}
-                  </button>
-                )}
-              </div>
-            </div>
-            <input ref={visitInputRef} type="file" accept=".xlsx,.xls" onChange={e => { const f = e.target.files?.[0]; if (f) handleVisitUpload(f); e.target.value = ''; }} className="hidden" />
-            <div
-              onDragOver={e => { e.preventDefault(); setDragOver(true); }}
-              onDragLeave={() => setDragOver(false)}
-              onDrop={e => {
-                e.preventDefault();
-                setDragOver(false);
-                const file = e.dataTransfer.files[0];
-                if (file && (file.name.endsWith('.xlsx') || file.name.endsWith('.xls'))) {
-                  handleVisitUpload(file);
-                } else {
-                  setVisitMsg('Please drop an .xlsx or .xls file');
-                  setVisitMsgType('error');
-                }
-              }}
-              onClick={() => !visitUploading && visitInputRef.current?.click()}
-              className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-all ${
-                dragOver
-                  ? 'border-[var(--color-navy)] bg-blue-50'
-                  : visitUploading
-                    ? 'border-gray-200 bg-gray-50 cursor-wait'
-                    : 'border-gray-300 hover:border-[var(--color-navy)] hover:bg-gray-50'
-              }`}
-            >
-              {visitUploading ? (
-                <div className="flex flex-col items-center gap-2">
-                  <svg className="w-8 h-8 text-[var(--color-navy)] animate-spin" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                  </svg>
-                  <span className="text-sm font-medium text-[var(--color-navy)]">{visitMsg || 'Processing...'}</span>
-                </div>
-              ) : (
-                <div className="flex flex-col items-center gap-2">
-                  <svg className={`w-8 h-8 ${dragOver ? 'text-[var(--color-navy)]' : 'text-gray-400'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
-                  </svg>
-                  <div>
-                    <span className="text-sm font-medium text-[var(--color-navy)]">Drop Perigee visits file here</span>
-                    <span className="text-sm text-gray-400"> or </span>
-                    <span className="text-sm font-medium text-[var(--color-navy)] underline">browse</span>
-                  </div>
-                  <span className="text-xs text-gray-400">.xlsx or .xls</span>
-                </div>
-              )}
-            </div>
-            {visitMsg && !visitUploading && (
-              <div className={`mt-2 text-xs font-medium text-center ${visitMsgType === 'error' ? 'text-red-600' : visitMsgType === 'success' ? 'text-green-600' : 'text-blue-600'}`}>
-                {visitMsg}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Filters */}
-        <div className="bg-white rounded-lg border border-gray-200 p-4 mb-4 flex flex-wrap gap-3 items-end">
-          <FilterSelect label="Channel" value={filterChannel} onChange={setFilterChannel} options={channels.map(c => ({ value: c.id, label: c.name }))} />
-          <FilterSelect label="Team" value={filterTeam} onChange={setFilterTeam} options={teams.map(t => ({ value: t.id, label: t.name }))} />
-          <FilterSelect label="Region" value={filterRegion} onChange={setFilterRegion} options={regions.map(r => ({ value: r.id, label: r.name }))} />
-          {users.length > 0 && (
-            <FilterSelect label="Rep" value={filterUser} onChange={setFilterUser} options={users.filter(u => u.teamId).map(u => ({ value: u.id, label: `${u.name} ${u.surname}` }))} />
-          )}
-          <div className="min-w-[130px]">
-            <label className="block text-xs font-medium text-gray-500 mb-1">From</label>
-            <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-[var(--color-navy)]" />
-          </div>
-          <div className="min-w-[130px]">
-            <label className="block text-xs font-medium text-gray-500 mb-1">To</label>
-            <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-[var(--color-navy)]" />
-          </div>
-          <div className="flex-1 min-w-[200px]">
-            <label className="block text-xs font-medium text-gray-500 mb-1">Search</label>
-            <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Store name, code..." className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-[var(--color-navy)]" />
-          </div>
-        </div>
-
         {/* Channel Performance */}
         {!fetching && channelPerf.length > 0 && (
           <div className="bg-white rounded-lg border border-gray-200 overflow-hidden mb-4">
@@ -651,8 +514,8 @@ export default function DashboardPage() {
                 <table className="text-sm" style={{ tableLayout: 'fixed', width: chPerfWidths.reduce((a, b) => a + b, 0) }}>
                   <thead>
                     <tr className="bg-[var(--color-navy)] text-white text-left">
-                      {['Channel', 'Visits', 'Stores Seen', 'Stores Missed', '% to Target'].map((label, idx) => (
-                        <th key={label} className={`px-3 py-2 font-medium relative select-none ${idx > 0 ? 'text-right' : ''}`} style={{ width: chPerfWidths[idx] }}>
+                      {['Channel', 'Frequency', 'Total Stores', 'Visits', 'Total Seen', 'Seen TM', 'Seen TQTR', 'Seen 2+', 'Missed', '% to Target'].map((label, idx) => (
+                        <th key={label} className={`px-3 py-2 font-medium relative select-none text-xs ${idx > 0 ? 'text-right' : ''}`} style={{ width: chPerfWidths[idx] }}>
                           {label}
                           <div className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-white/30" onMouseDown={e => handleChResizeStart(e, idx)} />
                         </th>
@@ -663,10 +526,15 @@ export default function DashboardPage() {
                     {channelPerf.map(cp => (
                       <tr key={cp.id} className="border-t border-gray-100 hover:bg-gray-50">
                         <td className="px-3 py-2 font-medium truncate" style={{ width: chPerfWidths[0] }}>{cp.name}</td>
-                        <td className="px-3 py-2 text-right" style={{ width: chPerfWidths[1] }}>{cp.visits.toLocaleString()}</td>
-                        <td className="px-3 py-2 text-right text-green-600 font-medium" style={{ width: chPerfWidths[2] }}>{cp.seen}</td>
-                        <td className="px-3 py-2 text-right text-red-600 font-medium" style={{ width: chPerfWidths[3] }}>{cp.missed}</td>
-                        <td className="px-3 py-2 text-right" style={{ width: chPerfWidths[4] }}>
+                        <td className="px-3 py-2 text-right text-xs" style={{ width: chPerfWidths[1] }}>{cp.freqLabel}</td>
+                        <td className="px-3 py-2 text-right" style={{ width: chPerfWidths[2] }}>{cp.storeCount}</td>
+                        <td className="px-3 py-2 text-right" style={{ width: chPerfWidths[3] }}>{cp.visits.toLocaleString()}</td>
+                        <td className="px-3 py-2 text-right text-green-600 font-medium" style={{ width: chPerfWidths[4] }}>{cp.totalSeen}</td>
+                        <td className="px-3 py-2 text-right text-blue-600 font-medium" style={{ width: chPerfWidths[5] }}>{cp.seenTM}</td>
+                        <td className="px-3 py-2 text-right text-indigo-600 font-medium" style={{ width: chPerfWidths[6] }}>{cp.seenTQTR}</td>
+                        <td className="px-3 py-2 text-right text-emerald-600 font-medium" style={{ width: chPerfWidths[7] }}>{cp.seen2Plus}</td>
+                        <td className="px-3 py-2 text-right text-red-600 font-medium" style={{ width: chPerfWidths[8] }}>{cp.missed}</td>
+                        <td className="px-3 py-2 text-right" style={{ width: chPerfWidths[9] }}>
                           {cp.pct !== undefined ? (
                             <span className={`inline-block min-w-[48px] text-center px-2 py-0.5 rounded text-xs font-bold ${cp.pct >= 100 ? 'bg-green-100 text-green-700' : cp.pct >= 50 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
                               {cp.pct}%
