@@ -192,6 +192,9 @@ export default function DataImportPage() {
         {/* Sync emails from visit data */}
         <SyncEmailsSection />
 
+        {/* Sync store assignments from visit data */}
+        <SyncStoreRepsSection />
+
         {/* Placeholder for future form imports */}
         <div className="bg-white rounded-xl border border-gray-200 border-dashed p-6 max-w-2xl mt-6 text-center">
           <div className="text-gray-400">
@@ -284,6 +287,93 @@ function SyncEmailsSection() {
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+interface StoreRepResult { store: string; code: string; rep: string | null; team: string | null; region: string | null; status: string }
+
+function SyncStoreRepsSection() {
+  const [syncing, setSyncing] = useState(false);
+  const [results, setResults] = useState<{ repAssigned: number; teamAssigned: number; regionAssigned: number; noVisits: number; noUser: number; details: StoreRepResult[] } | null>(null);
+  const [error, setError] = useState('');
+
+  async function handleSync() {
+    setSyncing(true); setError(''); setResults(null);
+    try {
+      const res = await authFetch('/api/stores/sync-reps', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      if (!res.ok) { setError('Failed to sync'); return; }
+      const data = await res.json();
+      setResults(data);
+    } catch { setError('Network error'); }
+    finally { setSyncing(false); }
+  }
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-6 max-w-2xl mt-6">
+      <div className="flex items-center gap-3 mb-3">
+        <div className="w-10 h-10 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.058 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z" />
+          </svg>
+        </div>
+        <div>
+          <h2 className="text-lg font-semibold text-[var(--color-navy)]">Sync Store Assignments</h2>
+          <p className="text-xs text-gray-500">Assign rep, team, and region to stores from visit data</p>
+        </div>
+      </div>
+      <p className="text-sm text-gray-500 mb-4">
+        For each store, finds the rep who visits it most frequently and assigns them as the store rep. Then sets the team from the rep&apos;s team, and the region from the team&apos;s region.
+      </p>
+      <button
+        onClick={handleSync}
+        disabled={syncing}
+        className="px-4 py-2 bg-[var(--color-navy)] text-white rounded-lg text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
+      >
+        {syncing ? 'Syncing...' : 'Sync Store Assignments'}
+      </button>
+      {error && <div className="mt-3 text-sm text-red-600 font-medium">{error}</div>}
+      {results && (
+        <div className="mt-4">
+          <div className="flex flex-wrap gap-4 text-sm mb-3">
+            <span className="text-green-600 font-medium">{results.repAssigned} reps assigned</span>
+            <span className="text-blue-600 font-medium">{results.teamAssigned} teams assigned</span>
+            <span className="text-indigo-600 font-medium">{results.regionAssigned} regions assigned</span>
+            <span className="text-gray-500">{results.noVisits} no visits</span>
+            <span className="text-amber-600">{results.noUser} no matching user</span>
+          </div>
+          {results.details.length > 0 && (
+            <div className="max-h-60 overflow-y-auto border border-gray-200 rounded-lg">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-gray-50 text-gray-500 sticky top-0">
+                    <th className="px-3 py-2 text-left font-medium">Store</th>
+                    <th className="px-3 py-2 text-left font-medium">Code</th>
+                    <th className="px-3 py-2 text-left font-medium">Rep</th>
+                    <th className="px-3 py-2 text-left font-medium">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {results.details.map((r, i) => (
+                    <tr key={i} className="border-t border-gray-100">
+                      <td className="px-3 py-1.5 truncate max-w-[200px]">{r.store}</td>
+                      <td className="px-3 py-1.5 font-mono">{r.code}</td>
+                      <td className="px-3 py-1.5">{r.rep || '\u2014'}</td>
+                      <td className="px-3 py-1.5">
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                          r.status === 'ok' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
+                        }`}>
+                          {r.status === 'ok' ? 'ASSIGNED' : 'NO USER'}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
     </div>
