@@ -78,6 +78,7 @@ export default function DashboardPage() {
   const [visitMsg, setVisitMsg] = useState('');
   const [visitMsgType, setVisitMsgType] = useState<'success' | 'error' | ''>('');
   const [clearingVisits, setClearingVisits] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
   const visitInputRef = useRef<HTMLInputElement>(null);
 
   // Pagination
@@ -272,6 +273,18 @@ export default function DashboardPage() {
   }, [mappedStores, visitMap, channelFreqMap]);
   const storesMissingQuarter = useMemo(() => mappedStores.filter(s => !(quarterVisitMap[s.perigeeStoreCode])).length, [mappedStores, quarterVisitMap]);
 
+  // Percentage cards
+  const coveragePct = mapped > 0 ? Math.round((storesVisited / mapped) * 100) : 0;
+  const targetVisits = useMemo(() => {
+    let total = 0;
+    mappedStores.forEach(s => {
+      const freq = channelFreqMap[s.channelId];
+      if (freq && FREQ_RATE[freq] !== undefined) total += FREQ_RATE[freq];
+    });
+    return Math.round(total);
+  }, [mappedStores, channelFreqMap]);
+  const targetPct = targetVisits > 0 ? Math.round((visitFilteredTotal / targetVisits) * 100) : 0;
+
   // Channel performance grid data
   const channelPerf = useMemo(() => {
     return channels.map(ch => {
@@ -462,18 +475,40 @@ export default function DashboardPage() {
       <main className="ml-64 p-6">
         <h1 className="text-2xl font-bold text-[var(--color-navy)] mb-6">Dashboard</h1>
 
-        {/* Top cards */}
+        {/* Percentage cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+          <PctCard label="Store Coverage" pct={coveragePct} subtitle={`${storesVisited} of ${mapped} stores visited`} color={coveragePct >= 80 ? 'green' : coveragePct >= 50 ? 'amber' : 'red'} />
+          <PctCard label="Target Achievement" pct={targetPct} subtitle={`${visitFilteredTotal.toLocaleString()} of ${targetVisits.toLocaleString()} target visits`} color={targetPct >= 100 ? 'green' : targetPct >= 50 ? 'amber' : 'red'} />
+          <div className="bg-white rounded-lg border border-gray-200 p-4 flex items-center gap-4">
+            <div className="w-12 h-12 rounded-lg flex items-center justify-center bg-blue-50 text-blue-700">
+              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" /></svg>
+            </div>
+            <div>
+              <div className="text-2xl font-bold text-gray-900">{visitFilteredTotal.toLocaleString()}</div>
+              <div className="text-xs text-gray-500">Total Visits</div>
+              {visitTotal !== visitFilteredTotal && <div className="text-[10px] text-gray-400 mt-0.5">{visitTotal.toLocaleString()} all-time</div>}
+              {dateFrom && dateTo && <div className="text-[10px] text-gray-400 mt-0.5">{formatDate(dateFrom)} – {formatDate(dateTo)}</div>}
+            </div>
+          </div>
+        </div>
+
+        {/* Count cards */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
           <Card label="Stores Visited" value={storesVisited} icon="check" color="green" subtitle={`of ${mapped} mapped`} />
           <Card label="Stores Missed (Month)" value={storesMissed} icon="alert" color={storesMissed > 0 ? 'red' : 'green'} subtitle={dateFrom && dateTo ? `Monthly+ channels \u00b7 ${formatDate(dateFrom)} \u2013 ${formatDate(dateTo)}` : 'Monthly+ channels only'} />
           <Card label="Stores Missing (Quarter)" value={storesMissingQuarter} icon="alert" color={storesMissingQuarter > 0 ? 'amber' : 'green'} subtitle="0 visits in quarter" />
         </div>
 
-        {/* Admin visit upload section */}
+        {/* Admin visit upload section — drag & drop */}
         {isAdmin && (
           <div className="bg-white rounded-lg border border-gray-200 p-4 mb-4">
             <div className="flex items-center justify-between mb-3">
-              <h2 className="text-sm font-bold text-[var(--color-navy)]">Import Visits (Perigee Export)</h2>
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm font-bold text-[var(--color-navy)]">Import Visits (Perigee Export)</h2>
+                {visitTotal > 0 && !visitMsg && (
+                  <span className="text-[10px] font-medium text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">{visitTotal.toLocaleString()} visits stored</span>
+                )}
+              </div>
               <div className="flex gap-2">
                 {visitTotal > 0 && (
                   <button
@@ -486,24 +521,57 @@ export default function DashboardPage() {
                 )}
               </div>
             </div>
-            <div className="flex items-center gap-3">
-              <input ref={visitInputRef} type="file" accept=".xlsx,.xls" onChange={e => { const f = e.target.files?.[0]; if (f) handleVisitUpload(f); e.target.value = ''; }} className="hidden" />
-              <button
-                onClick={() => visitInputRef.current?.click()}
-                disabled={visitUploading}
-                className="px-4 py-2 bg-[var(--color-navy)] text-white text-sm rounded-lg font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
-              >
-                {visitUploading ? 'Uploading...' : 'Upload Visits Excel'}
-              </button>
-              {visitMsg && (
-                <span className={`text-xs font-medium ${visitMsgType === 'error' ? 'text-red-600' : visitMsgType === 'success' ? 'text-green-600' : 'text-blue-600'}`}>
-                  {visitMsg}
-                </span>
-              )}
-              {visitTotal > 0 && !visitMsg && (
-                <span className="text-xs text-gray-400">{visitTotal.toLocaleString()} visits stored</span>
+            <input ref={visitInputRef} type="file" accept=".xlsx,.xls" onChange={e => { const f = e.target.files?.[0]; if (f) handleVisitUpload(f); e.target.value = ''; }} className="hidden" />
+            <div
+              onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={e => {
+                e.preventDefault();
+                setDragOver(false);
+                const file = e.dataTransfer.files[0];
+                if (file && (file.name.endsWith('.xlsx') || file.name.endsWith('.xls'))) {
+                  handleVisitUpload(file);
+                } else {
+                  setVisitMsg('Please drop an .xlsx or .xls file');
+                  setVisitMsgType('error');
+                }
+              }}
+              onClick={() => !visitUploading && visitInputRef.current?.click()}
+              className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-all ${
+                dragOver
+                  ? 'border-[var(--color-navy)] bg-blue-50'
+                  : visitUploading
+                    ? 'border-gray-200 bg-gray-50 cursor-wait'
+                    : 'border-gray-300 hover:border-[var(--color-navy)] hover:bg-gray-50'
+              }`}
+            >
+              {visitUploading ? (
+                <div className="flex flex-col items-center gap-2">
+                  <svg className="w-8 h-8 text-[var(--color-navy)] animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  <span className="text-sm font-medium text-[var(--color-navy)]">{visitMsg || 'Processing...'}</span>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center gap-2">
+                  <svg className={`w-8 h-8 ${dragOver ? 'text-[var(--color-navy)]' : 'text-gray-400'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+                  </svg>
+                  <div>
+                    <span className="text-sm font-medium text-[var(--color-navy)]">Drop Perigee visits file here</span>
+                    <span className="text-sm text-gray-400"> or </span>
+                    <span className="text-sm font-medium text-[var(--color-navy)] underline">browse</span>
+                  </div>
+                  <span className="text-xs text-gray-400">.xlsx or .xls</span>
+                </div>
               )}
             </div>
+            {visitMsg && !visitUploading && (
+              <div className={`mt-2 text-xs font-medium text-center ${visitMsgType === 'error' ? 'text-red-600' : visitMsgType === 'success' ? 'text-green-600' : 'text-blue-600'}`}>
+                {visitMsg}
+              </div>
+            )}
           </div>
         )}
 
@@ -735,6 +803,32 @@ export default function DashboardPage() {
         )}
       </main>
     </>
+  );
+}
+
+function PctCard({ label, pct, subtitle, color }: { label: string; pct: number; subtitle: string; color: 'green' | 'amber' | 'red' }) {
+  const ring = color === 'green' ? 'text-green-500' : color === 'amber' ? 'text-amber-500' : 'text-red-500';
+  const bg = color === 'green' ? 'bg-green-50' : color === 'amber' ? 'bg-amber-50' : 'bg-red-50';
+  const r = 20;
+  const circ = 2 * Math.PI * r;
+  const offset = circ - (Math.min(pct, 100) / 100) * circ;
+  return (
+    <div className="bg-white rounded-lg border border-gray-200 p-4 flex items-center gap-4">
+      <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${bg} relative`}>
+        <svg width="48" height="48" viewBox="0 0 48 48">
+          <circle cx="24" cy="24" r={r} fill="none" stroke="currentColor" strokeWidth="4" className="text-gray-200" />
+          <circle cx="24" cy="24" r={r} fill="none" stroke="currentColor" strokeWidth="4" className={ring}
+            strokeDasharray={circ} strokeDashoffset={offset} strokeLinecap="round"
+            transform="rotate(-90 24 24)" style={{ transition: 'stroke-dashoffset 0.5s ease' }} />
+        </svg>
+        <span className="absolute text-[9px] font-bold text-gray-700">{pct}%</span>
+      </div>
+      <div>
+        <div className="text-2xl font-bold text-gray-900">{pct}%</div>
+        <div className="text-xs text-gray-500">{label}</div>
+        <div className="text-[10px] text-gray-400 mt-0.5">{subtitle}</div>
+      </div>
+    </div>
   );
 }
 

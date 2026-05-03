@@ -25,6 +25,16 @@ export async function PUT(req: Request) {
       .filter((e: string) => e.length > 0);
   }
 
+  if (body.visitSource === 'manual' || body.visitSource === 'api') {
+    settings.visitSource = body.visitSource;
+  }
+  if (typeof body.perigeeApiUrl === 'string') {
+    settings.perigeeApiUrl = body.perigeeApiUrl.trim();
+  }
+  if (typeof body.perigeeApiKey === 'string') {
+    settings.perigeeApiKey = body.perigeeApiKey.trim();
+  }
+
   await saveSettings(settings);
   return NextResponse.json(settings);
 }

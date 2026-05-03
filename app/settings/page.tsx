@@ -13,12 +13,22 @@ export default function SettingsPage() {
   const [fetching, setFetching] = useState(true);
   const [msg, setMsg] = useState('');
 
+  // Perigee API settings
+  const [visitSource, setVisitSource] = useState<'manual' | 'api'>('manual');
+  const [perigeeApiUrl, setPerigeeApiUrl] = useState('');
+  const [perigeeApiKey, setPerigeeApiKey] = useState('');
+  const [apiMsg, setApiMsg] = useState('');
+  const [apiSaving, setApiSaving] = useState(false);
+
   useEffect(() => {
     if (!session) return;
     authFetch('/api/settings', { cache: 'no-store' })
       .then(r => r.json())
       .then(d => {
         setMappingEmails(d.mappingEmails || []);
+        setVisitSource(d.visitSource || 'manual');
+        setPerigeeApiUrl(d.perigeeApiUrl || '');
+        setPerigeeApiKey(d.perigeeApiKey || '');
         setFetching(false);
       })
       .catch(() => setFetching(false));
@@ -42,6 +52,29 @@ export default function SettingsPage() {
       setMsg('Error saving');
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function saveApiSettings() {
+    setApiSaving(true);
+    setApiMsg('');
+    try {
+      const res = await authFetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ visitSource, perigeeApiUrl, perigeeApiKey }),
+      });
+      if (!res.ok) throw new Error('Failed to save');
+      const d = await res.json();
+      setVisitSource(d.visitSource || 'manual');
+      setPerigeeApiUrl(d.perigeeApiUrl || '');
+      setPerigeeApiKey(d.perigeeApiKey || '');
+      setApiMsg('Saved');
+      setTimeout(() => setApiMsg(''), 2000);
+    } catch {
+      setApiMsg('Error saving');
+    } finally {
+      setApiSaving(false);
     }
   }
 
@@ -130,6 +163,85 @@ export default function SettingsPage() {
                 <div className={`text-xs mt-2 font-medium ${msg === 'Saved' ? 'text-green-600' : 'text-red-600'}`}>
                   {msg}
                 </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Perigee API Configuration */}
+        <div className="bg-white rounded-xl border border-gray-200 p-6 max-w-xl mt-6">
+          <h2 className="text-lg font-semibold text-[var(--color-navy)] mb-1">Visit Data Source</h2>
+          <p className="text-sm text-gray-500 mb-4">
+            Choose how visit data is ingested. Manual upload uses drag-and-drop Excel files. API mode polls the Perigee API automatically.
+          </p>
+
+          {fetching ? (
+            <div className="text-sm text-gray-400">Loading...</div>
+          ) : (
+            <>
+              <div className="flex gap-3 mb-4">
+                <button
+                  onClick={() => setVisitSource('manual')}
+                  className={`flex-1 py-2.5 px-4 rounded-lg text-sm font-medium border-2 transition-all ${
+                    visitSource === 'manual'
+                      ? 'border-[var(--color-navy)] bg-[var(--color-navy)]/5 text-[var(--color-navy)]'
+                      : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                  }`}
+                >
+                  Manual Upload
+                </button>
+                <button
+                  onClick={() => setVisitSource('api')}
+                  className={`flex-1 py-2.5 px-4 rounded-lg text-sm font-medium border-2 transition-all ${
+                    visitSource === 'api'
+                      ? 'border-[var(--color-navy)] bg-[var(--color-navy)]/5 text-[var(--color-navy)]'
+                      : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                  }`}
+                >
+                  Perigee API
+                </button>
+              </div>
+
+              {visitSource === 'api' && (
+                <div className="flex flex-col gap-3 mb-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">API URL</label>
+                    <input
+                      type="url"
+                      value={perigeeApiUrl}
+                      onChange={e => setPerigeeApiUrl(e.target.value)}
+                      placeholder="https://api.perigeeapp.co.za/v1/visits"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-navy)]/30"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">API Key</label>
+                    <input
+                      type="password"
+                      value={perigeeApiKey}
+                      onChange={e => setPerigeeApiKey(e.target.value)}
+                      placeholder="Enter API key..."
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-navy)]/30"
+                    />
+                  </div>
+                  <p className="text-[10px] text-amber-600 font-medium">
+                    Perigee API integration is not yet active. Configure credentials now so it&apos;s ready to switch on when available.
+                  </p>
+                </div>
+              )}
+
+              <button
+                onClick={saveApiSettings}
+                disabled={apiSaving}
+                className="px-4 py-2 bg-[var(--color-navy)] text-white rounded-lg text-sm font-medium hover:bg-[var(--color-navy)]/90 transition-colors disabled:opacity-50"
+              >
+                {apiSaving ? 'Saving...' : 'Save'}
+              </button>
+
+              {apiMsg && (
+                <span className={`text-xs ml-3 font-medium ${apiMsg === 'Saved' ? 'text-green-600' : 'text-red-600'}`}>
+                  {apiMsg}
+                </span>
               )}
             </>
           )}

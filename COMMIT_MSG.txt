@@ -1,0 +1,8 @@
+Visit percentage cards, drag-and-drop upload, Perigee API stub
+
+- Store Coverage %, Target Achievement %, Total Visits cards with ring charts
+- Drag-and-drop upload zone replaces basic file input
+- Perigee API poll stub route + settings toggle (manual/api)
+- Settings page: visit source selector + API URL/key config
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
