@@ -368,17 +368,23 @@ export default function DashboardPage() {
       const seenTQTR = tmStores.filter(s => (quarterVisitMap[s.perigeeStoreCode] || 0) > 0).length;
       const seen2Plus = tmStores.filter(s => (visitMap[s.perigeeStoreCode] || 0) > 2).length;
       // Aggregate target across channels × months in range
+      // Only count visits from stores whose channel has a target (fair comparison)
       let totalTarget = 0;
+      let targetedVisitsCount = 0;
       let hasAnyTarget = false;
       channels.forEach(ch => {
         const freq = (ch as ChannelRow).targetFrequency;
         if (!freq) return;
         const rate = FREQ_RATE[freq];
         if (rate === undefined) return;
-        const teamChStores = tmStores.filter(s => s.channelId === ch.id).length;
-        if (teamChStores > 0) { totalTarget += teamChStores * rate * monthsInRange; hasAnyTarget = true; }
+        const teamChStores = tmStores.filter(s => s.channelId === ch.id);
+        if (teamChStores.length > 0) {
+          totalTarget += teamChStores.length * rate * monthsInRange;
+          targetedVisitsCount += teamChStores.reduce((sum, s) => sum + (visitMap[s.perigeeStoreCode] || 0), 0);
+          hasAnyTarget = true;
+        }
       });
-      const pct = hasAnyTarget && totalTarget > 0 ? Math.round((visits / totalTarget) * 100) : undefined;
+      const pct = hasAnyTarget && totalTarget > 0 ? Math.round((targetedVisitsCount / totalTarget) * 100) : undefined;
       return { id: tm.id, name: tm.name, storeCount: tmStores.length, visits, totalSeen, missed, seenTM, seenTQTR, seen2Plus, pct };
     }).filter(t => t.storeCount > 0);
   }, [teams, channels, mappedStores, visitMap, monthVisitMap, quarterVisitMap, monthsInRange]);
@@ -401,17 +407,23 @@ export default function DashboardPage() {
       const seen2Plus = repStores.filter(s => (visitMap[s.perigeeStoreCode] || 0) > 2).length;
       const teamName = user.teamId ? (nameMap[`team:${user.teamId}`] || '\u2014') : '\u2014';
       // Aggregate target across channels
+      // Only count visits from stores whose channel has a target (fair comparison)
       let totalTarget = 0;
+      let targetedVisitsCount = 0;
       let hasAnyTarget = false;
       channels.forEach(ch => {
         const freq = (ch as ChannelRow).targetFrequency;
         if (!freq) return;
         const rate = FREQ_RATE[freq];
         if (rate === undefined) return;
-        const repChStores = repStores.filter(s => s.channelId === ch.id).length;
-        if (repChStores > 0) { totalTarget += repChStores * rate * monthsInRange; hasAnyTarget = true; }
+        const repChStores = repStores.filter(s => s.channelId === ch.id);
+        if (repChStores.length > 0) {
+          totalTarget += repChStores.length * rate * monthsInRange;
+          targetedVisitsCount += repChStores.reduce((sum, s) => sum + (visitMap[s.perigeeStoreCode] || 0), 0);
+          hasAnyTarget = true;
+        }
       });
-      const pct = hasAnyTarget && totalTarget > 0 ? Math.round((visits / totalTarget) * 100) : undefined;
+      const pct = hasAnyTarget && totalTarget > 0 ? Math.round((targetedVisitsCount / totalTarget) * 100) : undefined;
       return {
         id: uid,
         name: `${user.name} ${user.surname}`.trim(),

@@ -1,8 +1,12 @@
-Rep Performance grid + fix Team Performance target calculation
+Rep Performance grid + fix % to Target in all summary grids
 
 - Add Rep Performance grid (10 columns: Rep, Team, Stores, Visits,
   Total Seen, Seen TM, Seen TQTR, Seen 2+, Missed, % to Target)
+- Fix Team + Rep % to Target: only count visits from stores whose
+  channel has a target frequency (same fix as top-level card).
+  Previously ALL visits were in numerator but only targeted stores
+  in denominator, inflating the percentage.
 - Fix Team Performance grid: scale targets by monthsInRange per
-  channel frequency, add TM/TQTR/Seen2+ columns (5 → 9 cols)
+  channel frequency, add TM/TQTR/Seen2+ columns (5 -> 9 cols)
 
 Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
