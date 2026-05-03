@@ -36,9 +36,9 @@ const COLUMNS: { key: SortCol; label: string; defaultWidth: number }[] = [
   { key: 'lastVisit', label: 'Last Visit', defaultWidth: 110 },
 ];
 
-function getMonthRange() {
+function getDefaultRange() {
   const now = new Date();
-  const from = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+  const from = `${now.getFullYear()}-01-01`; // start of year
   const to = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   return { from, to };
 }
@@ -69,7 +69,7 @@ export default function DashboardPage() {
   const [quarterVisitMap, setQuarterVisitMap] = useState<Record<string, number>>({});
 
   // Date filters
-  const { from: defaultFrom, to: defaultTo } = getMonthRange();
+  const { from: defaultFrom, to: defaultTo } = getDefaultRange();
   const [dateFrom, setDateFrom] = useState(defaultFrom);
   const [dateTo, setDateTo] = useState(defaultTo);
 

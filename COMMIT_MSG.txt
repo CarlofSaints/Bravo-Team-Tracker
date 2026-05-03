@@ -1,8 +1,6 @@
-Visit percentage cards, drag-and-drop upload, Perigee API stub
+Fix default date range to show all YTD visits
 
-- Store Coverage %, Target Achievement %, Total Visits cards with ring charts
-- Drag-and-drop upload zone replaces basic file input
-- Perigee API poll stub route + settings toggle (manual/api)
-- Settings page: visit source selector + API URL/key config
+- Default from Jan 1 instead of current month start
+- Visits spanning Nov 2025-May 2026 now all visible in cards and grids
 
 Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
