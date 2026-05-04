@@ -651,7 +651,7 @@ export default function StoresPage() {
     const body = encodeURIComponent(
       `Hi Perigee Support,\n\nWe are unable to find the following store in the Perigee system and would like to request that it be added:\n\nStore Name: ${storeName}\nArea: ${storeArea || 'N/A'}\n\nPlease let us know once this has been done.\n\nThank you`
     );
-    const to = mappingEmails.join(',');
+    const to = mappingEmails.join(';');
     window.open(`mailto:${to}?subject=${subject}&body=${body}`, '_blank');
 
     // Mark store as email sent

@@ -17,6 +17,7 @@ export default function SettingsPage() {
   const [visitSource, setVisitSource] = useState<'manual' | 'api'>('manual');
   const [perigeeApiUrl, setPerigeeApiUrl] = useState('');
   const [perigeeApiKey, setPerigeeApiKey] = useState('');
+  const [perigeeCustomer, setPerigeeCustomer] = useState('');
   const [apiMsg, setApiMsg] = useState('');
   const [apiSaving, setApiSaving] = useState(false);
 
@@ -29,6 +30,7 @@ export default function SettingsPage() {
         setVisitSource(d.visitSource || 'manual');
         setPerigeeApiUrl(d.perigeeApiUrl || '');
         setPerigeeApiKey(d.perigeeApiKey || '');
+        setPerigeeCustomer(d.perigeeCustomer || '');
         setFetching(false);
       })
       .catch(() => setFetching(false));
@@ -62,13 +64,14 @@ export default function SettingsPage() {
       const res = await authFetch('/api/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ visitSource, perigeeApiUrl, perigeeApiKey }),
+        body: JSON.stringify({ visitSource, perigeeApiUrl, perigeeApiKey, perigeeCustomer }),
       });
       if (!res.ok) throw new Error('Failed to save');
       const d = await res.json();
       setVisitSource(d.visitSource || 'manual');
       setPerigeeApiUrl(d.perigeeApiUrl || '');
       setPerigeeApiKey(d.perigeeApiKey || '');
+      setPerigeeCustomer(d.perigeeCustomer || '');
       setApiMsg('Saved');
       setTimeout(() => setApiMsg(''), 2000);
     } catch {
@@ -223,6 +226,17 @@ export default function SettingsPage() {
                       placeholder="Enter API key..."
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-navy)]/30"
                     />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Customer</label>
+                    <input
+                      type="text"
+                      value={perigeeCustomer}
+                      onChange={e => setPerigeeCustomer(e.target.value)}
+                      placeholder="e.g. Haier"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-navy)]/30"
+                    />
+                    <p className="text-[10px] text-gray-400 mt-1">Only visits for this customer will be imported from Perigee</p>
                   </div>
                   <p className="text-[10px] text-amber-600 font-medium">
                     Perigee API integration is not yet active. Configure credentials now so it&apos;s ready to switch on when available.

@@ -1,27 +1,28 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import Link from 'next/link';
+import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { useAuth, authFetch } from '@/lib/useAuth';
 import Sidebar from '@/components/Sidebar';
 
-interface Team {
-  id: string;
-  name: string;
-  iconKey: string | null;
-}
+interface Team { id: string; name: string; iconKey: string | null }
+interface StoreRow { id: string; perigeeStoreCode: string; teamId: string; channelId: string }
+interface ChannelRow { id: string; name: string }
 
-const FAKE_SCORES: Record<string, { visits: number; training: number; sales: number; promo: number; total: number }> = {
-  Lions:     { visits: 245, training: 98, sales: 187, promo: 92, total: 622 },
-  Pumas:     { visits: 231, training: 95, sales: 172, promo: 88, total: 586 },
-  Sharks:    { visits: 218, training: 91, sales: 165, promo: 85, total: 559 },
-  Cheetahs:  { visits: 205, training: 88, sales: 158, promo: 82, total: 533 },
-  Blitz1:    { visits: 198, training: 85, sales: 145, promo: 79, total: 507 },
-  Elephants: { visits: 190, training: 82, sales: 138, promo: 76, total: 486 },
-  Blitz2:    { visits: 175, training: 78, sales: 132, promo: 73, total: 458 },
-  Botswana:  { visits: 142, training: 65, sales: 98,  promo: 61, total: 366 },
-  Namibia:   { visits: 128, training: 58, sales: 85,  promo: 54, total: 325 },
-};
+const COLUMNS = [
+  { key: 'rank', label: 'Rank', defaultWidth: 70 },
+  { key: 'team', label: 'Team', defaultWidth: 200 },
+  { key: 'visits', label: 'Visits', defaultWidth: 100 },
+  { key: 'displayMaintenance', label: 'Display Maintenance', defaultWidth: 150 },
+  { key: 'promo', label: 'Promo Compliance', defaultWidth: 150 },
+  { key: 'total', label: 'Total', defaultWidth: 100 },
+];
+
+function getDefaultRange() {
+  const now = new Date();
+  const from = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+  const to = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  return { from, to };
+}
 
 function rankBadge(rank: number) {
   if (rank === 1) return <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-amber-400 text-white text-xs font-bold">1</span>;
@@ -33,32 +34,99 @@ function rankBadge(rank: number) {
 export default function LeaderboardPage() {
   const { session, loading, logout } = useAuth();
   const [teams, setTeams] = useState<Team[]>([]);
+  const [stores, setStores] = useState<StoreRow[]>([]);
+  const [channels, setChannels] = useState<ChannelRow[]>([]);
+  const [visitMap, setVisitMap] = useState<Record<string, number>>({});
   const [fetching, setFetching] = useState(true);
+
+  // Filters
+  const { from: defaultFrom, to: defaultTo } = getDefaultRange();
+  const [dateFrom, setDateFrom] = useState(defaultFrom);
+  const [dateTo, setDateTo] = useState(defaultTo);
+  const [filterChannel, setFilterChannel] = useState('');
+
+  // Column widths
+  const [colWidths, setColWidths] = useState<number[]>(COLUMNS.map(c => c.defaultWidth));
+  const resizingRef = useRef<{ colIdx: number; startX: number; startW: number } | null>(null);
 
   useEffect(() => {
     if (!session) return;
-    authFetch('/api/teams', { cache: 'no-store' })
-      .then(r => r.json())
-      .then(data => {
-        setTeams(Array.isArray(data) ? data : []);
-        setFetching(false);
-      })
-      .catch(() => setFetching(false));
+    Promise.all([
+      authFetch('/api/teams', { cache: 'no-store' }).then(r => r.json()),
+      authFetch('/api/stores', { cache: 'no-store' }).then(r => r.json()),
+      authFetch('/api/channels', { cache: 'no-store' }).then(r => r.json()),
+    ]).then(([t, s, c]) => {
+      setTeams(Array.isArray(t) ? t : []);
+      setStores(Array.isArray(s) ? s : []);
+      setChannels(Array.isArray(c) ? c : []);
+      setFetching(false);
+    }).catch(() => setFetching(false));
   }, [session]);
+
+  // Fetch visits when dates change
+  const fetchVisits = useCallback(() => {
+    const params = new URLSearchParams();
+    if (dateFrom) params.set('from', dateFrom);
+    if (dateTo) params.set('to', dateTo);
+    authFetch(`/api/visits?${params}`, { cache: 'no-store' })
+      .then(r => r.json())
+      .then(data => setVisitMap(data.byStoreCode || {}))
+      .catch(() => {});
+  }, [dateFrom, dateTo]);
+
+  useEffect(() => {
+    if (!session) return;
+    fetchVisits();
+  }, [session, fetchVisits]);
+
+  // Aggregate visits by team
+  const rows = useMemo(() => {
+    const mappedStores = stores.filter(s => s.perigeeStoreCode !== 'Not Mapped');
+
+    return teams.map(t => {
+      const teamStores = mappedStores.filter(s => {
+        if (s.teamId !== t.id) return false;
+        if (filterChannel && s.channelId !== filterChannel) return false;
+        return true;
+      });
+      const visits = teamStores.reduce((sum, s) => sum + (visitMap[s.perigeeStoreCode] || 0), 0);
+      return { team: t, visits, displayMaintenance: 0, promo: 0, total: visits };
+    })
+    .filter(r => r.total > 0 || stores.some(s => s.teamId === r.team.id))
+    .sort((a, b) => b.total - a.total)
+    .map((row, i) => ({ ...row, rank: i + 1 }));
+  }, [teams, stores, visitMap, filterChannel]);
+
+  // Resize handlers
+  function handleResizeStart(e: React.MouseEvent, colIdx: number) {
+    e.preventDefault();
+    e.stopPropagation();
+    resizingRef.current = { colIdx, startX: e.clientX, startW: colWidths[colIdx] };
+
+    function onMove(ev: MouseEvent) {
+      if (!resizingRef.current) return;
+      const diff = ev.clientX - resizingRef.current.startX;
+      const newW = Math.max(60, resizingRef.current.startW + diff);
+      setColWidths(prev => {
+        const next = [...prev];
+        next[resizingRef.current!.colIdx] = newW;
+        return next;
+      });
+    }
+
+    function onUp() {
+      resizingRef.current = null;
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    }
+
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }
 
   if (loading || !session) {
     return <div className="min-h-screen flex items-center justify-center text-gray-400">Loading...</div>;
   }
-
-  // Build ranked rows: match team names to fake scores, sort by total desc
-  const rows = teams
-    .map(t => {
-      const scores = FAKE_SCORES[t.name];
-      return scores ? { team: t, ...scores } : null;
-    })
-    .filter(Boolean)
-    .sort((a, b) => b!.total - a!.total)
-    .map((row, i) => ({ ...row!, rank: i + 1 }));
 
   return (
     <>
@@ -66,30 +134,55 @@ export default function LeaderboardPage() {
       <main className="ml-64 p-6">
         <h1 className="text-2xl font-bold text-[var(--color-navy)] mb-6">Team Leaderboard</h1>
 
-        <div>
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-            {fetching ? (
-              <div className="text-center text-gray-400 py-12">Loading teams...</div>
-            ) : rows.length === 0 ? (
-              <div className="text-center text-gray-400 py-12">No teams found</div>
-            ) : (
-              <table className="w-full text-sm">
+        {/* Filters */}
+        <div className="bg-white rounded-lg border border-gray-200 p-4 mb-4 flex flex-wrap gap-3 items-end">
+          <div className="min-w-[150px]">
+            <label className="block text-xs font-medium text-gray-500 mb-1">Channel</label>
+            <select value={filterChannel} onChange={e => setFilterChannel(e.target.value)} className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm bg-white focus:outline-none focus:ring-1 focus:ring-[var(--color-navy)]">
+              <option value="">All</option>
+              {channels.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
+          <div className="min-w-[130px]">
+            <label className="block text-xs font-medium text-gray-500 mb-1">From</label>
+            <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-[var(--color-navy)]" />
+          </div>
+          <div className="min-w-[130px]">
+            <label className="block text-xs font-medium text-gray-500 mb-1">To</label>
+            <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-[var(--color-navy)]" />
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          {fetching ? (
+            <div className="text-center text-gray-400 py-12">Loading teams...</div>
+          ) : rows.length === 0 ? (
+            <div className="text-center text-gray-400 py-12">No teams found</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="text-sm" style={{ tableLayout: 'fixed', width: colWidths.reduce((a, b) => a + b, 0) }}>
                 <thead>
                   <tr className="bg-[var(--color-navy)] text-white text-left">
-                    <th className="px-4 py-3 font-semibold w-16">Rank</th>
-                    <th className="px-4 py-3 font-semibold">Team</th>
-                    <th className="px-4 py-3 font-semibold text-right">Visits</th>
-                    <th className="px-4 py-3 font-semibold text-right">Training</th>
-                    <th className="px-4 py-3 font-semibold text-right">Sales</th>
-                    <th className="px-4 py-3 font-semibold text-right">Promo Compliance</th>
-                    <th className="px-4 py-3 font-semibold text-right">Total</th>
+                    {COLUMNS.map((col, idx) => (
+                      <th
+                        key={col.key}
+                        className={`px-4 py-3 font-semibold relative select-none ${idx > 1 ? 'text-right' : ''}`}
+                        style={{ width: colWidths[idx] }}
+                      >
+                        {col.label}
+                        <div
+                          className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-white/30"
+                          onMouseDown={e => handleResizeStart(e, idx)}
+                        />
+                      </th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
                   {rows.map(row => (
                     <tr key={row.team.id} className="border-t border-gray-100 hover:bg-gray-50/50">
-                      <td className="px-4 py-3">{rankBadge(row.rank)}</td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3" style={{ width: colWidths[0] }}>{rankBadge(row.rank)}</td>
+                      <td className="px-4 py-3" style={{ width: colWidths[1] }}>
                         <div className="flex items-center gap-3">
                           {row.team.iconKey ? (
                             // eslint-disable-next-line @next/next/no-img-element
@@ -102,36 +195,16 @@ export default function LeaderboardPage() {
                           <span className="font-medium text-[var(--color-navy)]">{row.team.name}</span>
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-right text-gray-700">{row.visits}</td>
-                      <td className="px-4 py-3 text-right text-gray-700">{row.training}</td>
-                      <td className="px-4 py-3 text-right text-gray-700">{row.sales}</td>
-                      <td className="px-4 py-3 text-right text-gray-700">{row.promo}</td>
-                      <td className="px-4 py-3 text-right font-bold text-[var(--color-navy)]">{row.total}</td>
+                      <td className="px-4 py-3 text-right text-gray-700" style={{ width: colWidths[2] }}>{row.visits.toLocaleString()}</td>
+                      <td className="px-4 py-3 text-right text-gray-400" style={{ width: colWidths[3] }}>{row.displayMaintenance || '—'}</td>
+                      <td className="px-4 py-3 text-right text-gray-400" style={{ width: colWidths[4] }}>{row.promo || '—'}</td>
+                      <td className="px-4 py-3 text-right font-bold text-[var(--color-navy)]" style={{ width: colWidths[5] }}>{row.total.toLocaleString()}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-            )}
-          </div>
-
-          {/* Pro upsell banner */}
-          <div className="mt-4 bg-gradient-to-r from-[var(--color-navy)] to-[var(--color-navy-light)] rounded-xl p-5 flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3 text-white">
-              <svg className="w-6 h-6 text-amber-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
-              </svg>
-              <div>
-                <div className="font-semibold text-sm">This is sample data</div>
-                <div className="text-white/70 text-xs">Upgrade to Pro for live scores updated automatically from field activity</div>
-              </div>
             </div>
-            <Link
-              href="/pro"
-              className="px-5 py-2 bg-amber-400 text-[var(--color-navy)] rounded-lg text-sm font-bold hover:bg-amber-300 transition-colors flex-shrink-0"
-            >
-              Upgrade to Pro
-            </Link>
-          </div>
+          )}
         </div>
       </main>
     </>

@@ -34,6 +34,9 @@ export async function PUT(req: Request) {
   if (typeof body.perigeeApiKey === 'string') {
     settings.perigeeApiKey = body.perigeeApiKey.trim();
   }
+  if (typeof body.perigeeCustomer === 'string') {
+    settings.perigeeCustomer = body.perigeeCustomer.trim();
+  }
 
   await saveSettings(settings);
   return NextResponse.json(settings);

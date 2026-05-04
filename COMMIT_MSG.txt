@@ -1,3 +1,1 @@
-feat: multi-team membership - users can belong to multiple teams 
- 
-Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com> 
+feat: leaderboard + settings + email fix
