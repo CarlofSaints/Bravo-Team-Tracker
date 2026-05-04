@@ -1,1 +1,1 @@
-feat: leaderboard + settings + email fix
+feat: add customer filter to API settings
