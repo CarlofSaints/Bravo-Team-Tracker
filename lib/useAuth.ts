@@ -10,7 +10,7 @@ export interface Session {
   surname: string;
   email: string;
   role: 'admin' | 'team_manager' | 'ops_support' | 'rep';
-  teamId: string | null;
+  teamIds: string[];
   forcePasswordChange: boolean;
   profilePicKey: string | null;
 }

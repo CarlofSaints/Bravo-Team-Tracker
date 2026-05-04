@@ -44,7 +44,7 @@ export async function POST(req: Request) {
       surname: users[idx].surname,
       email: users[idx].email,
       role: users[idx].role,
-      teamId: users[idx].teamId,
+      teamIds: users[idx].teamIds,
       forcePasswordChange: false,
       profilePicKey: users[idx].profilePicKey,
     });

@@ -90,16 +90,17 @@ export async function POST(req: Request) {
       changed = true;
     }
 
-    // Assign team from rep
-    if (user.teamId && store.teamId !== user.teamId) {
-      store.teamId = user.teamId;
+    // Assign team from rep (use first/primary team)
+    const primaryTeamId = user.teamIds[0] || null;
+    if (primaryTeamId && store.teamId !== primaryTeamId) {
+      store.teamId = primaryTeamId;
       teamAssigned++;
       changed = true;
     }
-    result.team = user.teamId || null;
+    result.team = primaryTeamId;
 
     // Assign region from team
-    const regionId = user.teamId ? teamToRegion[user.teamId] : undefined;
+    const regionId = primaryTeamId ? teamToRegion[primaryTeamId] : undefined;
     if (regionId && store.regionId !== regionId) {
       store.regionId = regionId;
       regionAssigned++;

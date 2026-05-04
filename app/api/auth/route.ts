@@ -29,7 +29,7 @@ export async function POST(req: Request) {
       surname: user.surname,
       email: user.email,
       role: user.role,
-      teamId: user.teamId,
+      teamIds: user.teamIds,
       forcePasswordChange: user.forcePasswordChange,
       profilePicKey: user.profilePicKey,
     });

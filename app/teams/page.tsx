@@ -12,7 +12,7 @@ interface Team {
   createdAt: string;
 }
 
-interface UserRow { id: string; name: string; surname: string; teamId: string | null }
+interface UserRow { id: string; name: string; surname: string; teamIds: string[] }
 
 export default function TeamsPage() {
   const { session, loading, logout } = useAuth('admin');
@@ -144,7 +144,7 @@ export default function TeamsPage() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {teams.map(team => {
-              const memberUsers = users.filter(u => u.teamId === team.id);
+              const memberUsers = users.filter(u => u.teamIds && u.teamIds.includes(team.id));
               return (
                 <div key={team.id} className="bg-white rounded-lg border border-gray-200 p-5">
                   <div className="flex items-center gap-3 mb-3">

@@ -6,7 +6,7 @@ import Sidebar from '@/components/Sidebar';
 
 interface UserRow {
   id: string; username: string; name: string; surname: string; email: string;
-  role: string; teamId: string | null; forcePasswordChange: boolean; profilePicKey: string | null;
+  role: string; teamIds: string[]; forcePasswordChange: boolean; profilePicKey: string | null;
 }
 interface TeamRow { id: string; name: string }
 
@@ -35,7 +35,7 @@ export default function UsersPage() {
   const [fEmail, setFEmail] = useState('');
   const [fPassword, setFPassword] = useState('');
   const [fRole, setFRole] = useState('rep');
-  const [fTeamId, setFTeamId] = useState('');
+  const [fTeamIds, setFTeamIds] = useState<string[]>([]);
   const [fForceChange, setFForceChange] = useState(true);
 
   useEffect(() => {
@@ -58,7 +58,7 @@ export default function UsersPage() {
   function openCreate() {
     setEditId(null);
     setFUsername(''); setFName(''); setFSurname(''); setFEmail('');
-    setFPassword(''); setFRole('rep'); setFTeamId(''); setFForceChange(true);
+    setFPassword(''); setFRole('rep'); setFTeamIds([]); setFForceChange(true);
     setError('');
     setShowForm(true);
   }
@@ -66,7 +66,7 @@ export default function UsersPage() {
   function openEdit(u: UserRow) {
     setEditId(u.id);
     setFUsername(u.username); setFName(u.name); setFSurname(u.surname); setFEmail(u.email);
-    setFPassword(''); setFRole(u.role); setFTeamId(u.teamId || ''); setFForceChange(u.forcePasswordChange);
+    setFPassword(''); setFRole(u.role); setFTeamIds(u.teamIds || []); setFForceChange(u.forcePasswordChange);
     setError('');
     setShowForm(true);
   }
@@ -83,7 +83,7 @@ export default function UsersPage() {
         surname: fSurname.trim(),
         email: fEmail.trim(),
         role: fRole,
-        teamId: fTeamId || null,
+        teamIds: fTeamIds,
         forcePasswordChange: fForceChange,
       };
       if (fPassword) body.password = fPassword;
@@ -116,7 +116,10 @@ export default function UsersPage() {
     return <div className="min-h-screen flex items-center justify-center text-gray-400">Loading...</div>;
   }
 
-  const teamName = (id: string | null) => teams.find(t => t.id === id)?.name || '—';
+  const teamNames = (ids: string[]) => {
+    if (!ids || ids.length === 0) return '—';
+    return ids.map(id => teams.find(t => t.id === id)?.name).filter(Boolean).join(', ') || '—';
+  };
 
   return (
     <>
@@ -146,12 +149,24 @@ export default function UsersPage() {
                     {ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
                   </select>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Team</label>
-                  <select value={fTeamId} onChange={e => setFTeamId(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[var(--color-navy)]">
-                    <option value="">— None —</option>
-                    {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                  </select>
+                <div className="col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Teams</label>
+                  <div className="max-h-40 overflow-y-auto border border-gray-300 rounded-lg p-2 grid grid-cols-2 gap-1">
+                    {teams.map(t => (
+                      <label key={t.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-gray-50 px-1 py-0.5 rounded">
+                        <input
+                          type="checkbox"
+                          checked={fTeamIds.includes(t.id)}
+                          onChange={e => {
+                            if (e.target.checked) setFTeamIds(prev => [...prev, t.id]);
+                            else setFTeamIds(prev => prev.filter(id => id !== t.id));
+                          }}
+                          className="rounded"
+                        />
+                        {t.name}
+                      </label>
+                    ))}
+                  </div>
                 </div>
                 <div className="col-span-2 flex items-center gap-2">
                   <input type="checkbox" id="forceChange" checked={fForceChange} onChange={e => setFForceChange(e.target.checked)} className="rounded" />
@@ -192,7 +207,7 @@ export default function UsersPage() {
                       <td className="px-3 py-2">{u.name} {u.surname}</td>
                       <td className="px-3 py-2 text-gray-600">{u.email}</td>
                       <td className="px-3 py-2 capitalize">{u.role.replace('_', ' ')}</td>
-                      <td className="px-3 py-2">{teamName(u.teamId)}</td>
+                      <td className="px-3 py-2">{teamNames(u.teamIds)}</td>
                       <td className="px-3 py-2">
                         <div className="flex gap-1">
                           <button onClick={() => openEdit(u)} className="p-1 text-gray-400 hover:text-[var(--color-navy)]">

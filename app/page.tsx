@@ -19,7 +19,7 @@ interface StoreRow {
 interface TeamRow { id: string; name: string }
 interface RegionRow { id: string; name: string }
 interface ChannelRow { id: string; name: string; targetFrequency?: string }
-interface UserRow { id: string; name: string; surname: string; teamId: string | null }
+interface UserRow { id: string; name: string; surname: string; teamIds: string[] }
 
 type SortCol = 'name' | 'area' | 'channel' | 'team' | 'region' | 'perigeeCode' | 'rep' | 'visits' | 'lastVisit';
 type SortDir = 'asc' | 'desc';
@@ -405,7 +405,9 @@ export default function DashboardPage() {
       const seenTM = repStores.filter(s => (monthVisitMap[s.perigeeStoreCode] || 0) > 0).length;
       const seenTQTR = repStores.filter(s => (quarterVisitMap[s.perigeeStoreCode] || 0) > 0).length;
       const seen2Plus = repStores.filter(s => (visitMap[s.perigeeStoreCode] || 0) > 2).length;
-      const teamName = user.teamId ? (nameMap[`team:${user.teamId}`] || '\u2014') : '\u2014';
+      const teamName = user.teamIds && user.teamIds.length > 0
+        ? user.teamIds.map(tid => nameMap[`team:${tid}`]).filter(Boolean).join(', ') || '\u2014'
+        : '\u2014';
       // Aggregate target across channels
       // Only count visits from stores whose channel has a target (fair comparison)
       let totalTarget = 0;
@@ -534,7 +536,7 @@ export default function DashboardPage() {
           <FilterSelect label="Team" value={filterTeam} onChange={setFilterTeam} options={teams.map(t => ({ value: t.id, label: t.name }))} />
           <FilterSelect label="Region" value={filterRegion} onChange={setFilterRegion} options={regions.map(r => ({ value: r.id, label: r.name }))} />
           {users.length > 0 && (
-            <FilterSelect label="Rep" value={filterUser} onChange={setFilterUser} options={users.filter(u => u.teamId).map(u => ({ value: u.id, label: `${u.name} ${u.surname}` }))} />
+            <FilterSelect label="Rep" value={filterUser} onChange={setFilterUser} options={users.filter(u => u.teamIds && u.teamIds.length > 0).map(u => ({ value: u.id, label: `${u.name} ${u.surname}` }))} />
           )}
           <div className="min-w-[130px]">
             <label className="block text-xs font-medium text-gray-500 mb-1">From</label>

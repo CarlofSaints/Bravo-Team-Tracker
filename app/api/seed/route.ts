@@ -107,7 +107,7 @@ export async function POST(req: Request) {
       email: 'carl@outerjoin.co.za',
       password: pwHash,
       role: 'admin',
-      teamId: null,
+      teamIds: [],
       forcePasswordChange: false,
       profilePicKey: null,
       createdAt: now,
@@ -126,7 +126,7 @@ export async function POST(req: Request) {
           email: `${rep.name.toLowerCase()}@bravo.co.za`,
           password: pwHash,
           role: 'rep',
-          teamId,
+          teamIds: [teamId],
           forcePasswordChange: true,
           profilePicKey: null,
           createdAt: now,
@@ -136,9 +136,10 @@ export async function POST(req: Request) {
       }
     }
 
-    // 6. Create ops support users
+    // 6. Create ops support users (assigned to multiple teams)
     for (const ops of SEED_OPS) {
       const opsId = uid();
+      const opsTeamIds = ops.teams.map(tn => teamMap[tn]).filter(Boolean);
       users.push({
         id: opsId,
         username: ops.name.toLowerCase(),
@@ -147,11 +148,16 @@ export async function POST(req: Request) {
         email: `${ops.name.toLowerCase()}@bravo.co.za`,
         password: pwHash,
         role: 'ops_support',
-        teamId: null,
+        teamIds: opsTeamIds,
         forcePasswordChange: true,
         profilePicKey: null,
         createdAt: now,
       });
+      // Add ops to each team's members list
+      for (const tid of opsTeamIds) {
+        const team = teams.find(t => t.id === tid);
+        if (team && !team.members.includes(opsId)) team.members.push(opsId);
+      }
     }
 
     // 7. Create Tanya as team_manager
@@ -164,7 +170,7 @@ export async function POST(req: Request) {
       email: 'tanya@bravo.co.za',
       password: pwHash,
       role: 'team_manager',
-      teamId: null,
+      teamIds: [],
       forcePasswordChange: true,
       profilePicKey: null,
       createdAt: now,

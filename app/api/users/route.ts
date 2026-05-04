@@ -22,7 +22,8 @@ export async function POST(req: Request) {
 
   try {
     const body = await req.json();
-    const { username, name, surname, email, password, role, teamId, forcePasswordChange } = body;
+    const { username, name, surname, email, password, role, teamIds: rawTeamIds, teamId: legacyTeamId, forcePasswordChange } = body;
+    const teamIds: string[] = Array.isArray(rawTeamIds) ? rawTeamIds : (legacyTeamId ? [legacyTeamId] : []);
 
     if (!username || !name || !password || !role) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
@@ -41,7 +42,7 @@ export async function POST(req: Request) {
       email: email || '',
       password: await bcrypt.hash(password, 10),
       role,
-      teamId: teamId || null,
+      teamIds,
       forcePasswordChange: forcePasswordChange ?? true,
       profilePicKey: null,
       createdAt: new Date().toISOString(),
@@ -51,13 +52,17 @@ export async function POST(req: Request) {
     await saveUsers(users);
 
     // Add to team members if assigned
-    if (newUser.teamId) {
+    if (newUser.teamIds.length > 0) {
       const teams = await loadTeams();
-      const team = teams.find(t => t.id === newUser.teamId);
-      if (team && !team.members.includes(newUser.id)) {
-        team.members.push(newUser.id);
-        await saveTeams(teams);
+      let changed = false;
+      for (const tid of newUser.teamIds) {
+        const team = teams.find(t => t.id === tid);
+        if (team && !team.members.includes(newUser.id)) {
+          team.members.push(newUser.id);
+          changed = true;
+        }
       }
+      if (changed) await saveTeams(teams);
     }
 
     // Send welcome email (non-blocking — don't fail user creation if email fails)
