@@ -4,39 +4,120 @@ import { useEffect, useState } from 'react';
 import { useAuth, authFetch } from '@/lib/useAuth';
 import Sidebar from '@/components/Sidebar';
 
+interface PollSlot {
+  id: string;
+  time: string;
+  type: 'short' | 'long';
+  enabled: boolean;
+}
+
+interface PollSchedule {
+  slots: PollSlot[];
+  timezone: string;
+}
+
+interface PerigeeConfig {
+  apiKey: string;
+  endpoint: string;
+  enabled: boolean;
+  customer: string;
+  lastPolledAt: string | null;
+  requestBody?: string;
+}
+
+interface TestResult {
+  ok?: boolean;
+  error?: string;
+  detail?: string;
+  totalRows?: number;
+  responseKeys?: string[];
+  sample?: Record<string, unknown>[];
+  rawTopLevelKeys?: string[];
+  meta?: Record<string, unknown>;
+  sentBody?: Record<string, unknown>;
+}
+
+const DEFAULT_BODY = JSON.stringify({
+  startDate: new Date().toISOString().slice(0, 10),
+  endDate: '',
+  channels: [],
+  stores: [],
+  provinces: [],
+  users: [],
+  tags: [],
+  customers: [],
+  userStatus: ['ACTIVE', 'INACTIVE'],
+  userAccess: ['ENABLED', 'SUSPENDED'],
+  includeDataUsage: 'YES',
+  includeNotificationData: 'NO',
+  includeTravelDistance: 'YES',
+  includeRecessData: 'NO',
+  earlyCheckoutTime: '16:50',
+  lateCheckinTime: '09:10',
+}, null, 2);
+
 export default function SettingsPage() {
   const { session, loading, logout } = useAuth('admin');
 
+  // Mapping emails
   const [mappingEmails, setMappingEmails] = useState<string[]>([]);
   const [newEmail, setNewEmail] = useState('');
   const [saving, setSaving] = useState(false);
   const [fetching, setFetching] = useState(true);
   const [msg, setMsg] = useState('');
 
-  // Perigee API settings
-  const [visitSource, setVisitSource] = useState<'manual' | 'api'>('manual');
-  const [perigeeApiUrl, setPerigeeApiUrl] = useState('');
-  const [perigeeApiKey, setPerigeeApiKey] = useState('');
-  const [perigeeCustomer, setPerigeeCustomer] = useState('');
-  const [apiMsg, setApiMsg] = useState('');
-  const [apiSaving, setApiSaving] = useState(false);
+  // Perigee API config
+  const [config, setConfig] = useState<PerigeeConfig | null>(null);
+  const [form, setForm] = useState({ apiKey: '', endpoint: '', enabled: false, customer: '' });
+  const [requestBody, setRequestBody] = useState(DEFAULT_BODY);
+  const [bodyError, setBodyError] = useState('');
+  const [configSaving, setConfigSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [testResult, setTestResult] = useState<TestResult | null>(null);
+  const [toast, setToast] = useState('');
+
+  // Polling schedule
+  const [schedule, setSchedule] = useState<PollSchedule>({ slots: [], timezone: 'Africa/Johannesburg' });
+  const [savingSchedule, setSavingSchedule] = useState(false);
 
   useEffect(() => {
     if (!session) return;
+    // Load mapping emails from old settings
     authFetch('/api/settings', { cache: 'no-store' })
       .then(r => r.json())
       .then(d => {
         setMappingEmails(d.mappingEmails || []);
-        setVisitSource(d.visitSource || 'manual');
-        setPerigeeApiUrl(d.perigeeApiUrl || '');
-        setPerigeeApiKey(d.perigeeApiKey || '');
-        setPerigeeCustomer(d.perigeeCustomer || '');
         setFetching(false);
       })
       .catch(() => setFetching(false));
+
+    // Load perigee config
+    authFetch('/api/config/perigee')
+      .then(r => r.json())
+      .then(data => {
+        if (!data.error) {
+          setConfig(data);
+          setForm({ apiKey: '', endpoint: data.endpoint || '', enabled: data.enabled || false, customer: data.customer || '' });
+          if (data.requestBody) setRequestBody(data.requestBody);
+        }
+      })
+      .catch(() => {});
+
+    // Load schedule
+    authFetch('/api/config/perigee-schedule')
+      .then(r => r.json())
+      .then(data => { if (data.slots) setSchedule(data); })
+      .catch(() => {});
   }, [session]);
 
-  async function save(emails: string[]) {
+  function showToast(m: string) {
+    setToast(m);
+    setTimeout(() => setToast(''), 3500);
+  }
+
+  // ── Mapping Emails ─────────────────────────────────────────────────────────
+  async function saveEmails(emails: string[]) {
     setSaving(true);
     setMsg('');
     try {
@@ -57,47 +138,133 @@ export default function SettingsPage() {
     }
   }
 
-  async function saveApiSettings() {
-    setApiSaving(true);
-    setApiMsg('');
-    try {
-      const res = await authFetch('/api/settings', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ visitSource, perigeeApiUrl, perigeeApiKey, perigeeCustomer }),
-      });
-      if (!res.ok) throw new Error('Failed to save');
-      const d = await res.json();
-      setVisitSource(d.visitSource || 'manual');
-      setPerigeeApiUrl(d.perigeeApiUrl || '');
-      setPerigeeApiKey(d.perigeeApiKey || '');
-      setPerigeeCustomer(d.perigeeCustomer || '');
-      setApiMsg('Saved');
-      setTimeout(() => setApiMsg(''), 2000);
-    } catch {
-      setApiMsg('Error saving');
-    } finally {
-      setApiSaving(false);
-    }
-  }
-
   function handleAdd() {
     const email = newEmail.trim().toLowerCase();
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return;
-    if (mappingEmails.includes(email)) {
-      setNewEmail('');
-      return;
-    }
+    if (mappingEmails.includes(email)) { setNewEmail(''); return; }
     const updated = [...mappingEmails, email];
     setMappingEmails(updated);
     setNewEmail('');
-    save(updated);
+    saveEmails(updated);
   }
 
   function handleRemove(email: string) {
     const updated = mappingEmails.filter(e => e !== email);
     setMappingEmails(updated);
-    save(updated);
+    saveEmails(updated);
+  }
+
+  // ── Perigee Config ─────────────────────────────────────────────────────────
+  function handleBodyChange(val: string) {
+    setRequestBody(val);
+    try { JSON.parse(val); setBodyError(''); }
+    catch (e) { setBodyError(e instanceof Error ? e.message : 'Invalid JSON'); }
+  }
+
+  async function handleConfigSave() {
+    setConfigSaving(true);
+    try {
+      try { JSON.parse(requestBody); } catch {
+        showToast('Fix the JSON errors before saving');
+        setConfigSaving(false);
+        return;
+      }
+      const body: Record<string, unknown> = {
+        endpoint: form.endpoint,
+        enabled: form.enabled,
+        customer: form.customer,
+        requestBody,
+      };
+      if (form.apiKey) body.apiKey = form.apiKey;
+
+      const res = await authFetch('/api/config/perigee', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) {
+        showToast('Settings saved');
+        setForm(f => ({ ...f, apiKey: '' }));
+        const r2 = await authFetch('/api/config/perigee');
+        setConfig(await r2.json());
+      } else {
+        showToast('Save failed');
+      }
+    } catch {
+      showToast('Save failed');
+    } finally {
+      setConfigSaving(false);
+    }
+  }
+
+  async function callPoll(mode: 'test' | 'import') {
+    let parsed: Record<string, unknown>;
+    try { parsed = JSON.parse(requestBody); }
+    catch { showToast('Fix the JSON errors first'); return; }
+
+    if (!parsed.startDate) { showToast('startDate is required in the request body'); return; }
+
+    if (mode === 'test') { setTesting(true); setTestResult(null); }
+    else {
+      if (!confirm(`Import visits from ${parsed.startDate}? This will create new visit records.`)) return;
+      setImporting(true);
+    }
+
+    try {
+      const res = await authFetch('/api/visits/poll', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...parsed, mode }),
+      });
+      const data = await res.json();
+
+      if (mode === 'test') {
+        setTestResult(data);
+        showToast(data.ok ? `Test OK \u2014 ${data.totalRows} visits returned` : (data.error || 'Test failed'));
+      } else {
+        showToast(data.ok ? `Imported ${data.importedRows} visits (${data.skippedDuplicates ?? 0} duplicates skipped)` : (data.error || 'Import failed'));
+      }
+    } catch {
+      showToast(`${mode === 'test' ? 'Connection' : 'Import'} failed`);
+    } finally {
+      setTesting(false);
+      setImporting(false);
+    }
+  }
+
+  // ── Polling Schedule ───────────────────────────────────────────────────────
+  function addPollSlot() {
+    setSchedule(s => ({
+      ...s,
+      slots: [...s.slots, { id: crypto.randomUUID(), time: '08:00', type: 'short', enabled: true }],
+    }));
+  }
+
+  function updateSlot(id: string, field: keyof PollSlot, value: string | boolean) {
+    setSchedule(s => ({
+      ...s,
+      slots: s.slots.map(sl => sl.id === id ? { ...sl, [field]: value } : sl),
+    }));
+  }
+
+  function removeSlot(id: string) {
+    setSchedule(s => ({ ...s, slots: s.slots.filter(sl => sl.id !== id) }));
+  }
+
+  async function saveScheduleHandler() {
+    setSavingSchedule(true);
+    try {
+      const res = await authFetch('/api/config/perigee-schedule', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(schedule),
+      });
+      showToast(res.ok ? 'Poll schedule saved' : 'Failed to save schedule');
+    } catch {
+      showToast('Failed to save schedule');
+    } finally {
+      setSavingSchedule(false);
+    }
   }
 
   if (loading || !session) {
@@ -121,7 +288,6 @@ export default function SettingsPage() {
             <div className="text-sm text-gray-400">Loading...</div>
           ) : (
             <>
-              {/* Email list */}
               <div className="flex flex-col gap-2 mb-4">
                 {mappingEmails.length === 0 && (
                   <div className="text-sm text-gray-400 italic">No email addresses configured</div>
@@ -143,7 +309,6 @@ export default function SettingsPage() {
                 ))}
               </div>
 
-              {/* Add new */}
               <div className="flex gap-2">
                 <input
                   type="email"
@@ -171,96 +336,215 @@ export default function SettingsPage() {
           )}
         </div>
 
-        {/* Perigee API Configuration */}
+        {/* Perigee API Connection */}
         <div className="bg-white rounded-xl border border-gray-200 p-6 max-w-xl mt-6">
-          <h2 className="text-lg font-semibold text-[var(--color-navy)] mb-1">Visit Data Source</h2>
-          <p className="text-sm text-gray-500 mb-4">
-            Choose how visit data is ingested. Manual upload uses drag-and-drop Excel files. API mode polls the Perigee API automatically.
-          </p>
+          <h2 className="text-lg font-semibold text-[var(--color-navy)] mb-1">Perigee API Connection</h2>
+          <p className="text-sm text-gray-500 mb-4">Endpoint and authentication for the Perigee visit data API</p>
 
-          {fetching ? (
-            <div className="text-sm text-gray-400">Loading...</div>
-          ) : (
-            <>
-              <div className="flex gap-3 mb-4">
-                <button
-                  onClick={() => setVisitSource('manual')}
-                  className={`flex-1 py-2.5 px-4 rounded-lg text-sm font-medium border-2 transition-all ${
-                    visitSource === 'manual'
-                      ? 'border-[var(--color-navy)] bg-[var(--color-navy)]/5 text-[var(--color-navy)]'
-                      : 'border-gray-200 text-gray-500 hover:border-gray-300'
-                  }`}
-                >
-                  Manual Upload
-                </button>
-                <button
-                  onClick={() => setVisitSource('api')}
-                  className={`flex-1 py-2.5 px-4 rounded-lg text-sm font-medium border-2 transition-all ${
-                    visitSource === 'api'
-                      ? 'border-[var(--color-navy)] bg-[var(--color-navy)]/5 text-[var(--color-navy)]'
-                      : 'border-gray-200 text-gray-500 hover:border-gray-300'
-                  }`}
-                >
-                  Perigee API
-                </button>
-              </div>
+          <div className="flex flex-col gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">API Endpoint</label>
+              <input
+                type="url"
+                value={form.endpoint}
+                onChange={e => setForm(f => ({ ...f, endpoint: e.target.value }))}
+                placeholder="https://live.perigeeportal.co.za/api/visits"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-navy)]/30"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">
+                Bearer Token {config?.apiKey && <span className="text-gray-400">(current: {config.apiKey})</span>}
+              </label>
+              <input
+                type="password"
+                value={form.apiKey}
+                onChange={e => setForm(f => ({ ...f, apiKey: e.target.value }))}
+                placeholder="Leave blank to keep current token"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-navy)]/30"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Customer Filter</label>
+              <input
+                type="text"
+                value={form.customer}
+                onChange={e => setForm(f => ({ ...f, customer: e.target.value }))}
+                placeholder="e.g. Bravo Sleep"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-navy)]/30"
+              />
+              <p className="text-[10px] text-gray-400 mt-1">Only visits for this customer will be imported from Perigee</p>
+            </div>
+            {config?.lastPolledAt && (
+              <p className="text-xs text-gray-500">
+                Last polled: {new Date(config.lastPolledAt).toLocaleString('en-ZA')}
+              </p>
+            )}
+            <button
+              onClick={handleConfigSave}
+              disabled={configSaving}
+              className="w-fit px-4 py-2 bg-[var(--color-navy)] text-white rounded-lg text-sm font-medium hover:bg-[var(--color-navy)]/90 transition-colors disabled:opacity-50"
+            >
+              {configSaving ? 'Saving...' : 'Save Settings'}
+            </button>
+          </div>
+        </div>
 
-              {visitSource === 'api' && (
-                <div className="flex flex-col gap-3 mb-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-500 mb-1">API URL</label>
-                    <input
-                      type="url"
-                      value={perigeeApiUrl}
-                      onChange={e => setPerigeeApiUrl(e.target.value)}
-                      placeholder="https://api.perigeeapp.co.za/v1/visits"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-navy)]/30"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-500 mb-1">API Key</label>
-                    <input
-                      type="password"
-                      value={perigeeApiKey}
-                      onChange={e => setPerigeeApiKey(e.target.value)}
-                      placeholder="Enter API key..."
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-navy)]/30"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-500 mb-1">Customer</label>
-                    <input
-                      type="text"
-                      value={perigeeCustomer}
-                      onChange={e => setPerigeeCustomer(e.target.value)}
-                      placeholder="e.g. Haier"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-navy)]/30"
-                    />
-                    <p className="text-[10px] text-gray-400 mt-1">Only visits for this customer will be imported from Perigee</p>
-                  </div>
-                  <p className="text-[10px] text-amber-600 font-medium">
-                    Perigee API integration is not yet active. Configure credentials now so it&apos;s ready to switch on when available.
+        {/* Request Body + Test/Import */}
+        <div className="bg-white rounded-xl border border-gray-200 p-6 max-w-xl mt-6">
+          <h2 className="text-lg font-semibold text-[var(--color-navy)] mb-1">Request Body</h2>
+          <p className="text-sm text-gray-500 mb-4">JSON body sent to Perigee &mdash; edit filters, dates, and options below</p>
+
+          <textarea
+            value={requestBody}
+            onChange={e => handleBodyChange(e.target.value)}
+            rows={18}
+            spellCheck={false}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs font-mono leading-relaxed focus:outline-none focus:ring-2 focus:ring-[var(--color-navy)]/30"
+            style={{ resize: 'vertical' }}
+          />
+          {bodyError && (
+            <p className="text-red-600 text-xs mt-1">{bodyError}</p>
+          )}
+
+          <div className="flex gap-3 mt-4">
+            <button
+              onClick={() => callPoll('test')}
+              disabled={testing || !!bodyError}
+              className="px-4 py-2 border border-[var(--color-navy)] text-[var(--color-navy)] rounded-lg text-sm font-medium hover:bg-[var(--color-navy)]/5 transition-colors disabled:opacity-50"
+            >
+              {testing ? 'Testing...' : 'Test Connection'}
+            </button>
+            <button
+              onClick={() => callPoll('import')}
+              disabled={importing || !!bodyError}
+              className="px-4 py-2 bg-[var(--color-navy)] text-white rounded-lg text-sm font-medium hover:bg-[var(--color-navy)]/90 transition-colors disabled:opacity-50"
+            >
+              {importing ? 'Importing...' : 'Import Visits'}
+            </button>
+          </div>
+
+          {/* Test Results */}
+          {testResult && (
+            <div className={`mt-4 p-4 rounded-lg text-sm border ${testResult.ok ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+              {testResult.ok ? (
+                <>
+                  <p className="font-semibold text-green-800 mb-1">
+                    Connection successful &mdash; {testResult.totalRows} visits returned
                   </p>
-                </div>
+                  {testResult.responseKeys && testResult.responseKeys.length > 0 && (
+                    <p className="text-gray-700 text-xs mb-2">
+                      <strong>Fields:</strong> {testResult.responseKeys.join(', ')}
+                    </p>
+                  )}
+                  {testResult.meta && (
+                    <details className="mt-2">
+                      <summary className="cursor-pointer text-gray-600 text-xs">Perigee response metadata</summary>
+                      <pre className="mt-1 overflow-auto max-h-48 text-[11px] bg-gray-50 p-2 rounded">
+                        {JSON.stringify(testResult.meta, null, 2)}
+                      </pre>
+                    </details>
+                  )}
+                  {testResult.sentBody && (
+                    <details className="mt-2">
+                      <summary className="cursor-pointer text-gray-600 text-xs">Request body sent</summary>
+                      <pre className="mt-1 overflow-auto max-h-48 text-[11px] bg-gray-50 p-2 rounded">
+                        {JSON.stringify(testResult.sentBody, null, 2)}
+                      </pre>
+                    </details>
+                  )}
+                  {testResult.sample && testResult.sample.length > 0 && (
+                    <details className="mt-2">
+                      <summary className="cursor-pointer text-gray-600 text-xs">Sample data ({testResult.sample.length} rows)</summary>
+                      <pre className="mt-1 overflow-auto max-h-48 text-[11px] bg-gray-50 p-2 rounded">
+                        {JSON.stringify(testResult.sample, null, 2)}
+                      </pre>
+                    </details>
+                  )}
+                </>
+              ) : (
+                <>
+                  <p className="font-semibold text-red-800 mb-1">{testResult.error}</p>
+                  {testResult.detail && (
+                    <pre className="overflow-auto max-h-36 text-xs text-gray-600">{testResult.detail}</pre>
+                  )}
+                </>
               )}
-
-              <button
-                onClick={saveApiSettings}
-                disabled={apiSaving}
-                className="px-4 py-2 bg-[var(--color-navy)] text-white rounded-lg text-sm font-medium hover:bg-[var(--color-navy)]/90 transition-colors disabled:opacity-50"
-              >
-                {apiSaving ? 'Saving...' : 'Save'}
-              </button>
-
-              {apiMsg && (
-                <span className={`text-xs ml-3 font-medium ${apiMsg === 'Saved' ? 'text-green-600' : 'text-red-600'}`}>
-                  {apiMsg}
-                </span>
-              )}
-            </>
+            </div>
           )}
         </div>
+
+        {/* Polling Schedule */}
+        <div className="bg-white rounded-xl border border-gray-200 p-6 max-w-xl mt-6">
+          <h2 className="text-lg font-semibold text-[var(--color-navy)] mb-1">Polling Schedule</h2>
+          <p className="text-sm text-gray-500 mb-4">
+            Configure automated polling times (SAST). Cron runs every 30 minutes and fires on matching slots.
+          </p>
+
+          {schedule.slots.length === 0 ? (
+            <p className="text-gray-400 text-sm italic mb-3">No poll slots configured.</p>
+          ) : (
+            <div className="flex flex-col gap-2 mb-4">
+              {schedule.slots.map(slot => (
+                <div key={slot.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border border-gray-100">
+                  <input
+                    type="time"
+                    value={slot.time}
+                    onChange={e => updateSlot(slot.id, 'time', e.target.value)}
+                    className="px-2 py-1.5 border border-gray-300 rounded text-sm"
+                  />
+                  <select
+                    value={slot.type}
+                    onChange={e => updateSlot(slot.id, 'type', e.target.value)}
+                    className="px-2 py-1.5 border border-gray-300 rounded text-sm"
+                  >
+                    <option value="short">Short (today only)</option>
+                    <option value="long">Long (last 7 days)</option>
+                  </select>
+                  <label className="flex items-center gap-1.5 text-sm text-gray-700 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={slot.enabled}
+                      onChange={e => updateSlot(slot.id, 'enabled', e.target.checked)}
+                      className="w-4 h-4 accent-[var(--color-navy)]"
+                    />
+                    Enabled
+                  </label>
+                  <button
+                    onClick={() => removeSlot(slot.id)}
+                    className="ml-auto text-red-400 hover:text-red-600 text-xs font-medium transition-colors"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="flex gap-3">
+            <button
+              onClick={addPollSlot}
+              className="px-4 py-2 border border-[var(--color-navy)] text-[var(--color-navy)] rounded-lg text-sm font-medium hover:bg-[var(--color-navy)]/5 transition-colors"
+            >
+              + Add Poll Slot
+            </button>
+            <button
+              onClick={saveScheduleHandler}
+              disabled={savingSchedule}
+              className="px-4 py-2 bg-[var(--color-navy)] text-white rounded-lg text-sm font-medium hover:bg-[var(--color-navy)]/90 transition-colors disabled:opacity-50"
+            >
+              {savingSchedule ? 'Saving...' : 'Save Schedule'}
+            </button>
+          </div>
+        </div>
       </main>
+
+      {/* Toast */}
+      {toast && (
+        <div className="fixed bottom-6 right-6 bg-gray-800 text-white text-sm px-4 py-3 rounded-lg shadow-lg z-50">
+          {toast}
+        </div>
+      )}
     </>
   );
 }

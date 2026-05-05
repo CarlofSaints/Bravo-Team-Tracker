@@ -1,1 +1,6 @@
-feat: add customer filter to API settings
+Upgrade settings: full Perigee API config, request body editor, test/import, poll schedule
+
+- /api/config/perigee: dedicated config store (endpoint, token, customer, body)
+- /api/config/perigee-schedule: poll schedule config
+- /api/visits/poll: rewritten from stub to working Perigee poll with dedup
+- /settings: all 4 sections (emails, connection, body+test, schedule)
