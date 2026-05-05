@@ -119,6 +119,9 @@ function PerigeeSearchModal({ storeName, storeArea, onSelect, onClose, onEmailSu
   const [query, setQuery] = useState(storeName);
   const [channel, setChannel] = useState('');
   const [channels, setChannels] = useState<string[]>([]);
+  const [channelDropdownOpen, setChannelDropdownOpen] = useState(false);
+  const [channelSearch, setChannelSearch] = useState('');
+  const channelDropdownRef = useRef<HTMLDivElement>(null);
   const [results, setResults] = useState<PerigeeResult[]>([]);
   const [total, setTotal] = useState(0);
   const [matchCount, setMatchCount] = useState(0);
@@ -158,6 +161,23 @@ function PerigeeSearchModal({ storeName, storeArea, onSelect, onClose, onEmailSu
     const t = setTimeout(() => doSearch(query, channel), 300);
     return () => clearTimeout(t);
   }, [query, channel, doSearch]);
+
+  // Close channel dropdown on click outside
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (channelDropdownRef.current && !channelDropdownRef.current.contains(e.target as Node)) {
+        setChannelDropdownOpen(false);
+      }
+    }
+    if (channelDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [channelDropdownOpen]);
+
+  const filteredChannels = channelSearch
+    ? channels.filter(ch => ch.toLowerCase().includes(channelSearch.toLowerCase()))
+    : channels;
 
   // Only close on click if mousedown AND mouseup both happened on the backdrop
   function handleBackdropMouseDown(e: React.MouseEvent) {
@@ -203,14 +223,55 @@ function PerigeeSearchModal({ storeName, storeArea, onSelect, onClose, onEmailSu
               className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-navy)]/30"
               autoFocus
             />
-            <select
-              value={channel}
-              onChange={e => setChannel(e.target.value)}
-              className="px-2 py-2 border border-gray-300 rounded-lg text-sm bg-white min-w-[140px]"
-            >
-              <option value="">All Channels</option>
-              {channels.map(ch => <option key={ch} value={ch}>{ch}</option>)}
-            </select>
+            <div className="relative min-w-[160px]" ref={channelDropdownRef}>
+              <button
+                type="button"
+                onClick={() => { setChannelDropdownOpen(o => !o); setChannelSearch(''); }}
+                className="w-full flex items-center justify-between gap-1 px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white hover:border-gray-400 transition-colors"
+              >
+                <span className="truncate">{channel || 'All Channels'}</span>
+                <svg className={`w-3.5 h-3.5 flex-shrink-0 text-gray-400 transition-transform ${channelDropdownOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              {channelDropdownOpen && (
+                <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 flex flex-col max-h-[240px]">
+                  <div className="p-1.5 border-b border-gray-100">
+                    <input
+                      type="text"
+                      value={channelSearch}
+                      onChange={e => setChannelSearch(e.target.value)}
+                      placeholder="Search channels..."
+                      className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-[var(--color-navy)]/30"
+                      autoFocus
+                      onClick={e => e.stopPropagation()}
+                    />
+                  </div>
+                  <div className="overflow-y-auto flex-1">
+                    <button
+                      type="button"
+                      onClick={() => { setChannel(''); setChannelDropdownOpen(false); }}
+                      className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-50 transition-colors ${!channel ? 'font-medium text-[var(--color-navy)] bg-gray-50' : 'text-gray-700'}`}
+                    >
+                      All Channels
+                    </button>
+                    {filteredChannels.map(ch => (
+                      <button
+                        key={ch}
+                        type="button"
+                        onClick={() => { setChannel(ch); setChannelDropdownOpen(false); }}
+                        className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-50 transition-colors ${channel === ch ? 'font-medium text-[var(--color-navy)] bg-gray-50' : 'text-gray-700'}`}
+                      >
+                        {ch}
+                      </button>
+                    ))}
+                    {filteredChannels.length === 0 && (
+                      <div className="px-3 py-2 text-xs text-gray-400">No channels match</div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
           <div className="flex items-center justify-between">
             {total > 0 && <div className="text-[10px] text-gray-400">{total.toLocaleString()} Perigee stores loaded</div>}
@@ -262,7 +323,7 @@ export default function StoresPage() {
   const [fetching, setFetching] = useState(true);
   const [search, setSearch] = useState('');
   const [filterChannel, setFilterChannel] = useState('');
-  const [filterStatus, setFilterStatus] = useState<'' | 'mapped' | 'unmapped'>('');
+  const [filterStatus, setFilterStatus] = useState<'' | 'mapped' | 'unmapped' | 'email_sent'>('');
 
   // Upload states for each zone
   const [matchUploading, setMatchUploading] = useState(false);
@@ -346,7 +407,8 @@ export default function StoresPage() {
     return stores.filter(s => {
       if (filterChannel && s.channelId !== filterChannel) return false;
       if (filterStatus === 'mapped' && s.perigeeStoreCode === 'Not Mapped') return false;
-      if (filterStatus === 'unmapped' && s.perigeeStoreCode !== 'Not Mapped') return false;
+      if (filterStatus === 'unmapped' && (s.perigeeStoreCode !== 'Not Mapped' || s.supportEmailSent)) return false;
+      if (filterStatus === 'email_sent' && !(s.perigeeStoreCode === 'Not Mapped' && s.supportEmailSent)) return false;
       if (search) {
         const q = search.trim().toLowerCase();
         if (!q) return true;
@@ -541,6 +603,8 @@ export default function StoresPage() {
         setPerigeeMsg(`${data.totalStores.toLocaleString()} active Perigee stores loaded`);
         setPerigeeMsgType('success');
         setPerigeeRefCount(data.totalStores);
+        // Log activity (fire-and-forget)
+        authFetch('/api/activity-log', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'perigee_stores_uploaded', detail: `${data.totalStores.toLocaleString()} stores` }) }).catch(() => {});
       }
     } catch (err) {
       console.error('Perigee upload error:', err);
@@ -559,6 +623,8 @@ export default function StoresPage() {
       else {
         setBravoMsg(`Added ${data.addedStores} stores, ${data.addedChannels} new channels`);
         setBravoMsgType('success'); reload();
+        // Log activity (fire-and-forget)
+        authFetch('/api/activity-log', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'bravo_stores_uploaded', detail: `${data.addedStores} stores added` }) }).catch(() => {});
       }
     } catch { setBravoMsg('Connection error'); setBravoMsgType('error'); }
     finally { setBravoUploading(false); }
@@ -587,6 +653,8 @@ export default function StoresPage() {
       if (res.ok) {
         setPerigeeMsg('Perigee data cleared'); setPerigeeMsgType('success');
         setPerigeeRefCount(0);
+        // Log activity (fire-and-forget)
+        authFetch('/api/activity-log', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'perigee_stores_cleared', detail: '' }) }).catch(() => {});
       }
     } catch { /* ignore */ }
     finally { setClearingPerigee(false); }
@@ -606,6 +674,8 @@ export default function StoresPage() {
       setStores(prev => prev.map(s => s.id === mappedId ? {
         ...s, perigeeStoreCode: p.code, perigeeStoreName: p.name, supportEmailSent: false,
       } : s));
+      // Log activity (fire-and-forget)
+      authFetch('/api/activity-log', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'store_mapped', detail: `${mappingStore.name} → ${p.code}` }) }).catch(() => {});
       const mappedName = `${mappingStore.name} → ${p.code}`;
       setMappingStore(null);
       setJustMappedId(mappedId);
@@ -627,6 +697,8 @@ export default function StoresPage() {
       setStores(prev => prev.map(s => s.id === store.id ? {
         ...s, perigeeStoreCode: 'Not Mapped', perigeeStoreName: '',
       } : s));
+      // Log activity (fire-and-forget)
+      authFetch('/api/activity-log', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'store_unmapped', detail: store.name }) }).catch(() => {});
     } catch { /* ignore */ }
   }
 
@@ -653,6 +725,9 @@ export default function StoresPage() {
     );
     const to = mappingEmails.join(';');
     window.open(`mailto:${to}?subject=${subject}&body=${body}`, '_blank');
+
+    // Log activity (fire-and-forget)
+    authFetch('/api/activity-log', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'support_email_sent', detail: label }) }).catch(() => {});
 
     // Mark store as email sent
     if (mappingStore) {
@@ -785,6 +860,7 @@ export default function StoresPage() {
               <option value="">All</option>
               <option value="mapped">Mapped</option>
               <option value="unmapped">Unmapped</option>
+              <option value="email_sent">Email Sent</option>
             </select>
           </div>
           <div className="flex-1 min-w-[200px]">

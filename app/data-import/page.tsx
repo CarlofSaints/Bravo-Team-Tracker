@@ -76,6 +76,8 @@ export default function DataImportPage() {
         setVisitMsg(`${data.totalVisits.toLocaleString()} visits imported`);
         setVisitMsgType('success');
         setVisitTotal(data.totalVisits);
+        // Log activity (fire-and-forget)
+        authFetch('/api/activity-log', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'visits_uploaded', detail: `${data.totalVisits.toLocaleString()} visits` }) }).catch(() => {});
       }
     } catch (err) {
       console.error('Visits upload error:', err);
@@ -92,6 +94,8 @@ export default function DataImportPage() {
       if (res.ok) {
         setVisitMsg('Visit data cleared'); setVisitMsgType('success');
         setVisitTotal(0);
+        // Log activity (fire-and-forget)
+        authFetch('/api/activity-log', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'visits_cleared', detail: '' }) }).catch(() => {});
       }
     } catch { /* ignore */ }
     finally { setClearingVisits(false); }
