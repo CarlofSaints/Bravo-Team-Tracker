@@ -42,6 +42,7 @@ export async function POST(req: Request) {
       email: email || '',
       password: await bcrypt.hash(password, 10),
       role,
+      status: 'active',
       teamIds,
       forcePasswordChange: forcePasswordChange ?? true,
       profilePicKey: null,

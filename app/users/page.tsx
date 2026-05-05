@@ -6,7 +6,7 @@ import Sidebar from '@/components/Sidebar';
 
 interface UserRow {
   id: string; username: string; name: string; surname: string; email: string;
-  role: string; teamIds: string[]; forcePasswordChange: boolean; profilePicKey: string | null;
+  role: string; status?: 'active' | 'exited'; teamIds: string[]; forcePasswordChange: boolean; profilePicKey: string | null;
 }
 interface TeamRow { id: string; name: string }
 
@@ -35,6 +35,7 @@ export default function UsersPage() {
   const [fEmail, setFEmail] = useState('');
   const [fPassword, setFPassword] = useState('');
   const [fRole, setFRole] = useState('rep');
+  const [fStatus, setFStatus] = useState<'active' | 'exited'>('active');
   const [fTeamIds, setFTeamIds] = useState<string[]>([]);
   const [fForceChange, setFForceChange] = useState(true);
 
@@ -58,7 +59,7 @@ export default function UsersPage() {
   function openCreate() {
     setEditId(null);
     setFUsername(''); setFName(''); setFSurname(''); setFEmail('');
-    setFPassword(''); setFRole('rep'); setFTeamIds([]); setFForceChange(true);
+    setFPassword(''); setFRole('rep'); setFStatus('active'); setFTeamIds([]); setFForceChange(true);
     setError('');
     setShowForm(true);
   }
@@ -66,7 +67,7 @@ export default function UsersPage() {
   function openEdit(u: UserRow) {
     setEditId(u.id);
     setFUsername(u.username); setFName(u.name); setFSurname(u.surname); setFEmail(u.email);
-    setFPassword(''); setFRole(u.role); setFTeamIds(u.teamIds || []); setFForceChange(u.forcePasswordChange);
+    setFPassword(''); setFRole(u.role); setFStatus(u.status || 'active'); setFTeamIds(u.teamIds || []); setFForceChange(u.forcePasswordChange);
     setError('');
     setShowForm(true);
   }
@@ -83,7 +84,8 @@ export default function UsersPage() {
         surname: fSurname.trim(),
         email: fEmail.trim(),
         role: fRole,
-        teamIds: fTeamIds,
+        status: fStatus,
+        teamIds: fStatus === 'exited' ? [] : fTeamIds,
         forcePasswordChange: fForceChange,
       };
       if (fPassword) body.password = fPassword;
@@ -149,25 +151,37 @@ export default function UsersPage() {
                     {ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
                   </select>
                 </div>
-                <div className="col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Teams</label>
-                  <div className="max-h-40 overflow-y-auto border border-gray-300 rounded-lg p-2 grid grid-cols-2 gap-1">
-                    {teams.map(t => (
-                      <label key={t.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-gray-50 px-1 py-0.5 rounded">
-                        <input
-                          type="checkbox"
-                          checked={fTeamIds.includes(t.id)}
-                          onChange={e => {
-                            if (e.target.checked) setFTeamIds(prev => [...prev, t.id]);
-                            else setFTeamIds(prev => prev.filter(id => id !== t.id));
-                          }}
-                          className="rounded"
-                        />
-                        {t.name}
-                      </label>
-                    ))}
-                  </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                  <select value={fStatus} onChange={e => setFStatus(e.target.value as 'active' | 'exited')} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[var(--color-navy)]">
+                    <option value="active">Active</option>
+                    <option value="exited">Exited</option>
+                  </select>
                 </div>
+                {fStatus !== 'exited' && (
+                  <div className="col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Teams</label>
+                    <div className="max-h-40 overflow-y-auto border border-gray-300 rounded-lg p-2 grid grid-cols-2 gap-1">
+                      {teams.map(t => (
+                        <label key={t.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-gray-50 px-1 py-0.5 rounded">
+                          <input
+                            type="checkbox"
+                            checked={fTeamIds.includes(t.id)}
+                            onChange={e => {
+                              if (e.target.checked) setFTeamIds(prev => [...prev, t.id]);
+                              else setFTeamIds(prev => prev.filter(id => id !== t.id));
+                            }}
+                            className="rounded"
+                          />
+                          {t.name}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {fStatus === 'exited' && (
+                  <div className="col-span-2 text-sm text-gray-500 italic">Exited users are not assigned to any team.</div>
+                )}
                 <div className="col-span-2 flex items-center gap-2">
                   <input type="checkbox" id="forceChange" checked={fForceChange} onChange={e => setFForceChange(e.target.checked)} className="rounded" />
                   <label htmlFor="forceChange" className="text-sm text-gray-700">Force password change on first login</label>
@@ -196,17 +210,25 @@ export default function UsersPage() {
                     <th className="px-3 py-2 font-medium">Name</th>
                     <th className="px-3 py-2 font-medium">Email</th>
                     <th className="px-3 py-2 font-medium">Role</th>
+                    <th className="px-3 py-2 font-medium">Status</th>
                     <th className="px-3 py-2 font-medium">Team</th>
                     <th className="px-3 py-2 font-medium w-20">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {users.map(u => (
-                    <tr key={u.id} className="border-t border-gray-100 hover:bg-gray-50">
+                    <tr key={u.id} className={`border-t border-gray-100 hover:bg-gray-50 ${u.status === 'exited' ? 'opacity-50' : ''}`}>
                       <td className="px-3 py-2 font-medium">{u.username}</td>
                       <td className="px-3 py-2">{u.name} {u.surname}</td>
                       <td className="px-3 py-2 text-gray-600">{u.email}</td>
                       <td className="px-3 py-2 capitalize">{u.role.replace('_', ' ')}</td>
+                      <td className="px-3 py-2">
+                        {(!u.status || u.status === 'active') ? (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">Active</span>
+                        ) : (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">Exited</span>
+                        )}
+                      </td>
                       <td className="px-3 py-2">{teamNames(u.teamIds)}</td>
                       <td className="px-3 py-2">
                         <div className="flex gap-1">

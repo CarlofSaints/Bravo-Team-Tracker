@@ -8,6 +8,7 @@ export interface User {
   email: string;
   password: string;
   role: 'admin' | 'team_manager' | 'ops_support' | 'rep';
+  status: 'active' | 'exited';
   teamIds: string[];
   forcePasswordChange: boolean;
   profilePicKey: string | null;
@@ -17,7 +18,12 @@ export interface User {
 const KEY = 'users.json';
 
 export async function loadUsers(): Promise<User[]> {
-  return readJson<User[]>(KEY, []);
+  const users = await readJson<User[]>(KEY, []);
+  // Backfill status for users created before this field existed
+  for (const u of users) {
+    if (!u.status) u.status = 'active';
+  }
+  return users;
 }
 
 export async function saveUsers(users: User[]): Promise<void> {

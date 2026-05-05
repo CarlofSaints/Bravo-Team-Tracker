@@ -25,8 +25,11 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     if (body.surname !== undefined) user.surname = body.surname;
     if (body.email !== undefined) user.email = body.email;
     if (body.role !== undefined) user.role = body.role;
+    if (body.status !== undefined) user.status = body.status;
     if (body.teamIds !== undefined) user.teamIds = Array.isArray(body.teamIds) ? body.teamIds : [];
     else if (body.teamId !== undefined) user.teamIds = body.teamId ? [body.teamId] : [];
+    // Exited users must not belong to any team
+    if (user.status === 'exited') user.teamIds = [];
     if (body.forcePasswordChange !== undefined) user.forcePasswordChange = body.forcePasswordChange;
     if (body.password) user.password = await bcrypt.hash(body.password, 10);
 
