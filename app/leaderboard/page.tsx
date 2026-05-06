@@ -6,12 +6,15 @@ import Sidebar from '@/components/Sidebar';
 
 interface Team { id: string; name: string; iconKey: string | null }
 interface StoreRow { id: string; perigeeStoreCode: string; teamId: string; channelId: string }
-interface ChannelRow { id: string; name: string }
+interface ChannelRow { id: string; name: string; targetFrequency?: string }
+
+const FREQ_RATE: Record<string, number> = { weekly: 4, monthly_3: 3, monthly_2: 2, monthly_1: 1, bimonthly: 0.5, quarterly: 0.333, biannual: 0.167, annual: 0.083 };
 
 const COLUMNS = [
   { key: 'rank', label: 'Rank', defaultWidth: 70 },
   { key: 'team', label: 'Team', defaultWidth: 200 },
   { key: 'visits', label: 'Visits', defaultWidth: 100 },
+  { key: 'targetPct', label: '% to Target', defaultWidth: 110 },
   { key: 'displayMaintenance', label: 'Display Maintenance', defaultWidth: 150 },
   { key: 'promo', label: 'Promo Compliance', defaultWidth: 150 },
   { key: 'total', label: 'Total', defaultWidth: 100 },
@@ -79,6 +82,22 @@ export default function LeaderboardPage() {
     fetchVisits();
   }, [session, fetchVisits]);
 
+  // How many months does the date range span?
+  const monthsInRange = useMemo(() => {
+    if (!dateFrom || !dateTo) return 1;
+    const f = new Date(dateFrom);
+    const t = new Date(dateTo);
+    const months = (t.getFullYear() - f.getFullYear()) * 12 + (t.getMonth() - f.getMonth()) + 1;
+    return Math.max(1, months);
+  }, [dateFrom, dateTo]);
+
+  // Channel frequency lookup
+  const channelFreqMap = useMemo(() => {
+    const m: Record<string, string> = {};
+    channels.forEach(c => { if (c.targetFrequency) m[c.id] = c.targetFrequency; });
+    return m;
+  }, [channels]);
+
   // Aggregate visits by team
   const rows = useMemo(() => {
     const mappedStores = stores.filter(s => s.perigeeStoreCode !== 'Not Mapped');
@@ -90,12 +109,63 @@ export default function LeaderboardPage() {
         return true;
       });
       const visits = teamStores.reduce((sum, s) => sum + (visitMap[s.perigeeStoreCode] || 0), 0);
-      return { team: t, visits, displayMaintenance: 0, promo: 0, total: visits };
+
+      // Calculate target % for this team
+      let targetTotal = 0;
+      let targetedVisits = 0;
+      let hasTarget = false;
+      channels.forEach(ch => {
+        const freq = ch.targetFrequency;
+        if (!freq) return;
+        const rate = FREQ_RATE[freq];
+        if (rate === undefined) return;
+        const teamChStores = teamStores.filter(s => s.channelId === ch.id);
+        if (teamChStores.length > 0) {
+          targetTotal += teamChStores.length * rate * monthsInRange;
+          targetedVisits += teamChStores.reduce((sum, s) => sum + (visitMap[s.perigeeStoreCode] || 0), 0);
+          hasTarget = true;
+        }
+      });
+      const targetPct = hasTarget && targetTotal > 0 ? Math.round((targetedVisits / targetTotal) * 100) : undefined;
+
+      return { team: t, visits, targetPct, displayMaintenance: 0, promo: 0, total: visits };
     })
     .filter(r => r.total > 0 || stores.some(s => s.teamId === r.team.id))
     .sort((a, b) => b.total - a.total)
     .map((row, i) => ({ ...row, rank: i + 1 }));
-  }, [teams, stores, visitMap, filterChannel]);
+  }, [teams, stores, channels, visitMap, filterChannel, monthsInRange]);
+
+  // Totals row
+  const totals = useMemo(() => {
+    const visits = rows.reduce((sum, r) => sum + r.visits, 0);
+    const displayMaintenance = rows.reduce((sum, r) => sum + r.displayMaintenance, 0);
+    const promo = rows.reduce((sum, r) => sum + r.promo, 0);
+    const total = rows.reduce((sum, r) => sum + r.total, 0);
+
+    // Overall target %
+    const mappedStores = stores.filter(s => s.perigeeStoreCode !== 'Not Mapped');
+    let targetTotal = 0;
+    let targetedVisits = 0;
+    let hasTarget = false;
+    channels.forEach(ch => {
+      const freq = ch.targetFrequency;
+      if (!freq) return;
+      const rate = FREQ_RATE[freq];
+      if (rate === undefined) return;
+      const chStores = mappedStores.filter(s => {
+        if (filterChannel && s.channelId !== filterChannel) return false;
+        return s.channelId === ch.id;
+      });
+      if (chStores.length > 0) {
+        targetTotal += chStores.length * rate * monthsInRange;
+        targetedVisits += chStores.reduce((sum, s) => sum + (visitMap[s.perigeeStoreCode] || 0), 0);
+        hasTarget = true;
+      }
+    });
+    const targetPct = hasTarget && targetTotal > 0 ? Math.round((targetedVisits / targetTotal) * 100) : undefined;
+
+    return { visits, targetPct, displayMaintenance, promo, total };
+  }, [rows, stores, channels, visitMap, filterChannel, monthsInRange]);
 
   // Resize handlers
   function handleResizeStart(e: React.MouseEvent, colIdx: number) {
@@ -196,12 +266,40 @@ export default function LeaderboardPage() {
                         </div>
                       </td>
                       <td className="px-4 py-3 text-right text-gray-700" style={{ width: colWidths[2] }}>{row.visits.toLocaleString()}</td>
-                      <td className="px-4 py-3 text-right text-gray-400" style={{ width: colWidths[3] }}>{row.displayMaintenance || '—'}</td>
-                      <td className="px-4 py-3 text-right text-gray-400" style={{ width: colWidths[4] }}>{row.promo || '—'}</td>
-                      <td className="px-4 py-3 text-right font-bold text-[var(--color-navy)]" style={{ width: colWidths[5] }}>{row.total.toLocaleString()}</td>
+                      <td className="px-4 py-3 text-right" style={{ width: colWidths[3] }}>
+                        {row.targetPct !== undefined ? (
+                          <span className={`inline-block min-w-[48px] text-center px-2 py-0.5 rounded text-xs font-bold ${row.targetPct >= 100 ? 'bg-green-100 text-green-700' : row.targetPct >= 50 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
+                            {row.targetPct}%
+                          </span>
+                        ) : (
+                          <span className="text-gray-400">{'\u2014'}</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-right text-gray-400" style={{ width: colWidths[4] }}>{row.displayMaintenance || '\u2014'}</td>
+                      <td className="px-4 py-3 text-right text-gray-400" style={{ width: colWidths[5] }}>{row.promo || '\u2014'}</td>
+                      <td className="px-4 py-3 text-right font-bold text-[var(--color-navy)]" style={{ width: colWidths[6] }}>{row.total.toLocaleString()}</td>
                     </tr>
                   ))}
                 </tbody>
+                <tfoot>
+                  <tr className="border-t-2 border-[var(--color-navy)] bg-gray-50 font-bold">
+                    <td className="px-4 py-3" style={{ width: colWidths[0] }}></td>
+                    <td className="px-4 py-3 text-[var(--color-navy)]" style={{ width: colWidths[1] }}>Total</td>
+                    <td className="px-4 py-3 text-right text-gray-700" style={{ width: colWidths[2] }}>{totals.visits.toLocaleString()}</td>
+                    <td className="px-4 py-3 text-right" style={{ width: colWidths[3] }}>
+                      {totals.targetPct !== undefined ? (
+                        <span className={`inline-block min-w-[48px] text-center px-2 py-0.5 rounded text-xs font-bold ${totals.targetPct >= 100 ? 'bg-green-100 text-green-700' : totals.targetPct >= 50 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
+                          {totals.targetPct}%
+                        </span>
+                      ) : (
+                        <span className="text-gray-400">{'\u2014'}</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-right text-gray-400" style={{ width: colWidths[4] }}>{totals.displayMaintenance || '\u2014'}</td>
+                    <td className="px-4 py-3 text-right text-gray-400" style={{ width: colWidths[5] }}>{totals.promo || '\u2014'}</td>
+                    <td className="px-4 py-3 text-right text-[var(--color-navy)]" style={{ width: colWidths[6] }}>{totals.total.toLocaleString()}</td>
+                  </tr>
+                </tfoot>
               </table>
             </div>
           )}
