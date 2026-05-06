@@ -25,6 +25,17 @@ interface PerigeeConfig {
   requestBody?: string;
 }
 
+interface CronLogEntry {
+  timestamp: string;
+  matched: boolean;
+  slotTime?: string;
+  slotType?: string;
+  result?: string;
+  imported?: number;
+  skipped?: number;
+  error?: string;
+}
+
 interface TestResult {
   ok?: boolean;
   error?: string;
@@ -81,6 +92,11 @@ export default function SettingsPage() {
   const [schedule, setSchedule] = useState<PollSchedule>({ slots: [], timezone: 'Africa/Johannesburg' });
   const [savingSchedule, setSavingSchedule] = useState(false);
 
+  // Cron logs
+  const [cronLogs, setCronLogs] = useState<CronLogEntry[]>([]);
+  const [loadingLogs, setLoadingLogs] = useState(false);
+  const [testingCron, setTestingCron] = useState(false);
+
   useEffect(() => {
     if (!session) return;
     // Load mapping emails from old settings
@@ -109,7 +125,36 @@ export default function SettingsPage() {
       .then(r => r.json())
       .then(data => { if (data.slots) setSchedule(data); })
       .catch(() => {});
+
+    loadCronLogs();
   }, [session]);
+
+  function loadCronLogs() {
+    setLoadingLogs(true);
+    authFetch('/api/cron/logs')
+      .then(r => r.json())
+      .then(data => { if (data.logs) setCronLogs(data.logs); })
+      .catch(() => {})
+      .finally(() => setLoadingLogs(false));
+  }
+
+  async function testCronNow() {
+    setTestingCron(true);
+    try {
+      const res = await authFetch('/api/cron/poll-visits?force=true');
+      const data = await res.json();
+      showToast(
+        data.ok
+          ? `Cron test: ${data.action} — imported: ${data.imported ?? 0}, skipped: ${data.skipped ?? 0}${data.reason ? ` (${data.reason})` : ''}`
+          : `Cron error: ${data.error || 'Unknown'}`
+      );
+      loadCronLogs();
+    } catch {
+      showToast('Failed to trigger cron');
+    } finally {
+      setTestingCron(false);
+    }
+  }
 
   function showToast(m: string) {
     setToast(m);
@@ -536,6 +581,77 @@ export default function SettingsPage() {
               {savingSchedule ? 'Saving...' : 'Save Schedule'}
             </button>
           </div>
+        </div>
+        {/* Cron Activity Log */}
+        <div className="bg-white rounded-xl border border-gray-200 p-6 max-w-xl mt-6">
+          <div className="flex justify-between items-start mb-4">
+            <div>
+              <h2 className="text-lg font-semibold text-[var(--color-navy)] mb-1">Cron Activity Log</h2>
+              <p className="text-sm text-gray-500">Recent automated polling attempts</p>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={loadCronLogs}
+                disabled={loadingLogs}
+                className="px-3 py-1.5 border border-gray-300 text-gray-600 rounded-lg text-xs font-medium hover:bg-gray-50 transition-colors disabled:opacity-50"
+              >
+                {loadingLogs ? 'Loading...' : 'Refresh'}
+              </button>
+              <button
+                onClick={testCronNow}
+                disabled={testingCron}
+                className="px-3 py-1.5 bg-[var(--color-navy)] text-white rounded-lg text-xs font-medium hover:bg-[var(--color-navy)]/90 transition-colors disabled:opacity-50"
+              >
+                {testingCron ? 'Running...' : 'Test Cron Now'}
+              </button>
+            </div>
+          </div>
+
+          {cronLogs.length === 0 ? (
+            <p className="text-gray-400 text-sm italic">
+              {loadingLogs ? 'Loading logs...' : 'No cron activity recorded yet.'}
+            </p>
+          ) : (
+            <div className="max-h-80 overflow-y-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-gray-200 text-gray-500 text-left">
+                    <th className="py-1.5 px-2">Time (SAST)</th>
+                    <th className="py-1.5 px-2">Matched</th>
+                    <th className="py-1.5 px-2">Slot</th>
+                    <th className="py-1.5 px-2">Result</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {cronLogs.map((log, i) => (
+                    <tr
+                      key={i}
+                      className={`border-b border-gray-50 ${log.error ? 'bg-red-50' : log.imported && log.imported > 0 ? 'bg-green-50' : ''}`}
+                    >
+                      <td className="py-1.5 px-2 whitespace-nowrap">
+                        {new Date(log.timestamp).toLocaleString('en-ZA', { timeZone: 'Africa/Johannesburg', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                      </td>
+                      <td className="py-1.5 px-2">
+                        <span className={`font-semibold ${log.matched ? 'text-green-600' : 'text-gray-400'}`}>
+                          {log.matched ? 'Yes' : 'No'}
+                        </span>
+                      </td>
+                      <td className="py-1.5 px-2">
+                        {log.slotTime ? `${log.slotTime} (${log.slotType})` : '\u2014'}
+                      </td>
+                      <td className={`py-1.5 px-2 ${log.error ? 'text-red-600' : 'text-gray-700'}`}>
+                        {log.error
+                          ? log.error.slice(0, 60)
+                          : log.imported !== undefined
+                            ? `+${log.imported} imported, ${log.skipped ?? 0} skipped`
+                            : log.result || '\u2014'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </main>
 
