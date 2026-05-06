@@ -113,6 +113,13 @@ export default function DashboardPage() {
   const [rpPerfWidths, setRpPerfWidths] = useState([160, 130, 70, 70, 90, 70, 80, 65, 70, 90]);
   const rpResizingRef = useRef<{ colIdx: number; startX: number; startW: number } | null>(null);
 
+  // Perigee sync state
+  const [syncing, setSyncing] = useState(false);
+  const [clearing, setClearing] = useState(false);
+  const [lastPolledAt, setLastPolledAt] = useState<string | null>(null);
+  const [syncMsg, setSyncMsg] = useState('');
+  const [perigeeConfigured, setPerigeeConfigured] = useState(false);
+
   // Fetch visits
   const fetchVisits = useCallback(() => {
     const params = new URLSearchParams();
@@ -181,6 +188,107 @@ export default function DashboardPage() {
       .then(data => setMonthVisitMap(data.byStoreCode || {}))
       .catch(() => {});
   }, [session]);
+
+  // Load Perigee config (admin only — for sync button)
+  useEffect(() => {
+    if (!session || session.role !== 'admin') return;
+    authFetch('/api/config/perigee', { cache: 'no-store' })
+      .then(r => r.json())
+      .then(data => {
+        if (!data.error && data.endpoint && data.apiKey) {
+          setPerigeeConfigured(true);
+          setLastPolledAt(data.lastPolledAt || null);
+        }
+      })
+      .catch(() => {});
+  }, [session]);
+
+  // Refresh all visit data (main range + month + quarter)
+  const refreshAllVisits = useCallback(() => {
+    fetchVisits();
+    // Re-trigger month visits
+    if (!session) return;
+    const now = new Date();
+    const mFrom = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+    const mTo = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    authFetch(`/api/visits?from=${mFrom}&to=${mTo}`, { cache: 'no-store' })
+      .then(r => r.json())
+      .then(data => setMonthVisitMap(data.byStoreCode || {}))
+      .catch(() => {});
+    // Re-trigger quarter visits
+    if (dateFrom) {
+      const d = new Date(dateFrom);
+      const qMonth = Math.floor(d.getMonth() / 3) * 3;
+      const qFrom = `${d.getFullYear()}-${String(qMonth + 1).padStart(2, '0')}-01`;
+      const qEnd = new Date(d.getFullYear(), qMonth + 3, 0);
+      const qTo = `${qEnd.getFullYear()}-${String(qEnd.getMonth() + 1).padStart(2, '0')}-${String(qEnd.getDate()).padStart(2, '0')}`;
+      authFetch(`/api/visits?from=${qFrom}&to=${qTo}`, { cache: 'no-store' })
+        .then(r => r.json())
+        .then(data => setQuarterVisitMap(data.byStoreCode || {}))
+        .catch(() => {});
+    }
+  }, [session, fetchVisits, dateFrom]);
+
+  // Sync visits from Perigee API
+  async function handleSync() {
+    if (syncing) return;
+    setSyncing(true);
+    setSyncMsg('');
+    try {
+      // Load saved request body from config
+      const cfgRes = await authFetch('/api/config/perigee', { cache: 'no-store' });
+      const cfg = await cfgRes.json();
+      let body: Record<string, unknown> = {};
+      if (cfg.requestBody) {
+        try { body = JSON.parse(cfg.requestBody); } catch { body = {}; }
+      }
+      // Override dates with dashboard's current range
+      body.startDate = dateFrom;
+      body.endDate = dateTo;
+      body.mode = 'import';
+
+      const res = await authFetch('/api/visits/poll', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setSyncMsg(`Synced: ${data.importedRows} new visits imported${data.skippedDuplicates ? `, ${data.skippedDuplicates} duplicates skipped` : ''}`);
+        setLastPolledAt(new Date().toISOString());
+        refreshAllVisits();
+      } else {
+        setSyncMsg(data.error || 'Sync failed');
+      }
+    } catch {
+      setSyncMsg('Sync failed — check Settings');
+    } finally {
+      setSyncing(false);
+      setTimeout(() => setSyncMsg(''), 6000);
+    }
+  }
+
+  // Clear all visit data
+  async function handleClearVisits() {
+    if (clearing) return;
+    if (!confirm('Clear ALL visit data? This removes all visits (Excel uploads and API imports). This cannot be undone.')) return;
+    setClearing(true);
+    setSyncMsg('');
+    try {
+      const res = await authFetch('/api/visits', { method: 'DELETE' });
+      if (res.ok) {
+        setSyncMsg('All visit data cleared');
+        refreshAllVisits();
+      } else {
+        setSyncMsg('Failed to clear visits');
+      }
+    } catch {
+      setSyncMsg('Failed to clear visits');
+    } finally {
+      setClearing(false);
+      setTimeout(() => setSyncMsg(''), 4000);
+    }
+  }
 
   const nameMap = useMemo(() => {
     const m: Record<string, string> = {};
@@ -551,6 +659,49 @@ export default function DashboardPage() {
             <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Store name, code..." className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-[var(--color-navy)]" />
           </div>
         </div>
+
+        {/* Perigee Sync Bar (admin only) */}
+        {isAdmin && perigeeConfigured && (
+          <div className="bg-white rounded-lg border border-gray-200 p-3 mb-4 flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2">
+              <svg className="w-4 h-4 text-[var(--color-navy)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182M2.985 19.644l3.181-3.182" />
+              </svg>
+              <span className="text-xs font-medium text-gray-600">Perigee API</span>
+            </div>
+            <button
+              onClick={handleSync}
+              disabled={syncing || clearing}
+              className="px-3 py-1.5 bg-[var(--color-navy)] text-white rounded text-xs font-medium hover:bg-[var(--color-navy)]/90 transition-colors disabled:opacity-50 flex items-center gap-1.5"
+            >
+              {syncing ? (
+                <>
+                  <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" className="opacity-25" /><path d="M4 12a8 8 0 018-8" stroke="currentColor" strokeWidth="4" strokeLinecap="round" className="opacity-75" /></svg>
+                  Syncing...
+                </>
+              ) : (
+                `Sync Visits (${formatDate(dateFrom)} \u2013 ${formatDate(dateTo)})`
+              )}
+            </button>
+            <button
+              onClick={handleClearVisits}
+              disabled={syncing || clearing}
+              className="px-3 py-1.5 border border-red-300 text-red-600 rounded text-xs font-medium hover:bg-red-50 transition-colors disabled:opacity-50"
+            >
+              {clearing ? 'Clearing...' : 'Clear All Visits'}
+            </button>
+            {lastPolledAt && (
+              <span className="text-[10px] text-gray-400 ml-auto">
+                Last synced: {new Date(lastPolledAt).toLocaleString('en-ZA')}
+              </span>
+            )}
+            {syncMsg && (
+              <span className={`text-xs font-medium ${syncMsg.startsWith('Synced') || syncMsg.startsWith('All visit') ? 'text-green-600' : 'text-red-600'}`}>
+                {syncMsg}
+              </span>
+            )}
+          </div>
+        )}
 
         {/* Percentage cards */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
