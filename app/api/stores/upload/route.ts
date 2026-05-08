@@ -5,6 +5,7 @@ import { loadChannels, saveChannels, Channel } from '@/lib/channelData';
 import { loadTeams } from '@/lib/teamData';
 import { loadRegions } from '@/lib/regionData';
 import { requireAdmin } from '@/lib/auth';
+import { VALID_INDEXES } from '@/lib/frequency';
 
 export const dynamic = 'force-dynamic';
 
@@ -41,6 +42,8 @@ export async function POST(req: Request) {
         const channelName = String(row['Channel'] || row['CHANNEL'] || row['Chain'] || row['CHAIN'] || '').trim();
         const regionName = String(row['Region'] || row['REGION'] || row['Province'] || '').trim();
         const teamName = String(row['Team'] || row['TEAM'] || '').trim();
+        const rawIdx = String(row['Call Cycle'] || row['Call Cycle Index'] || row['Index'] || row['Idx'] || '').trim().toUpperCase();
+        const callCycleIndex = VALID_INDEXES.has(rawIdx) ? rawIdx : undefined;
 
         if (!storeName) continue;
 
@@ -70,6 +73,7 @@ export async function POST(req: Request) {
           repUserId: null,
           perigeeStoreCode: 'Not Mapped',
           perigeeStoreName: '',
+          callCycleIndex,
           createdAt: new Date().toISOString(),
         };
         stores.push(newStore);

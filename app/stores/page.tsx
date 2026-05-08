@@ -3,11 +3,13 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { useAuth, authFetch } from '@/lib/useAuth';
 import Sidebar from '@/components/Sidebar';
+import { CALL_CYCLE_KEY, INDEX_TO_DESCRIPTION, VALID_INDEXES } from '@/lib/frequency';
 
 interface StoreRow {
   id: string; name: string; area: string; channelId: string; regionId: string;
   teamId: string; repUserId: string | null; perigeeStoreCode: string; perigeeStoreName: string;
   supportEmailSent?: boolean;
+  callCycleIndex?: string;
 }
 interface ChannelRow { id: string; name: string }
 interface TeamRow { id: string; name: string }
@@ -312,6 +314,21 @@ function PerigeeSearchModal({ storeName, storeArea, onSelect, onClose, onEmailSu
   );
 }
 
+/* ───── Call Cycle Badge Color ───── */
+function cycleIndexColor(index: string): string {
+  switch (index) {
+    case 'A': return 'bg-blue-600';
+    case 'B': return 'bg-sky-500';
+    case 'C': return 'bg-teal-500';
+    case 'D': return 'bg-emerald-500';
+    case 'E': return 'bg-amber-500';
+    case 'F': return 'bg-orange-500';
+    case 'G': return 'bg-purple-500';
+    case 'R': return 'bg-red-600';
+    default: return 'bg-gray-400';
+  }
+}
+
 /* ───── Main Page ───── */
 export default function StoresPage() {
   const { session, loading, logout } = useAuth();
@@ -324,6 +341,14 @@ export default function StoresPage() {
   const [search, setSearch] = useState('');
   const [filterChannel, setFilterChannel] = useState('');
   const [filterStatus, setFilterStatus] = useState<'' | 'mapped' | 'unmapped' | 'email_sent'>('');
+  const [filterCycle, setFilterCycle] = useState('');
+
+  // Inline call cycle editor
+  const [editingCycleId, setEditingCycleId] = useState<string | null>(null);
+  const cycleDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Legend panel collapsed
+  const [legendCollapsed, setLegendCollapsed] = useState(true);
 
   // Upload states for each zone
   const [matchUploading, setMatchUploading] = useState(false);
@@ -337,6 +362,10 @@ export default function StoresPage() {
   const [bravoUploading, setBravoUploading] = useState(false);
   const [bravoMsg, setBravoMsg] = useState('');
   const [bravoMsgType, setBravoMsgType] = useState<'success' | 'error' | ''>('');
+
+  const [cycleUploading, setCycleUploading] = useState(false);
+  const [cycleMsg, setCycleMsg] = useState('');
+  const [cycleMsgType, setCycleMsgType] = useState<'success' | 'error' | ''>('');
 
   const [clearingStores, setClearingStores] = useState(false);
   const [clearingPerigee, setClearingPerigee] = useState(false);
@@ -409,6 +438,8 @@ export default function StoresPage() {
       if (filterStatus === 'mapped' && s.perigeeStoreCode === 'Not Mapped') return false;
       if (filterStatus === 'unmapped' && (s.perigeeStoreCode !== 'Not Mapped' || s.supportEmailSent)) return false;
       if (filterStatus === 'email_sent' && !(s.perigeeStoreCode === 'Not Mapped' && s.supportEmailSent)) return false;
+      if (filterCycle === '__none__' && s.callCycleIndex) return false;
+      if (filterCycle && filterCycle !== '__none__' && s.callCycleIndex !== filterCycle) return false;
       if (search) {
         const q = search.trim().toLowerCase();
         if (!q) return true;
@@ -426,10 +457,10 @@ export default function StoresPage() {
       }
       return true;
     });
-  }, [stores, filterChannel, filterStatus, search, nameMap]);
+  }, [stores, filterChannel, filterStatus, filterCycle, search, nameMap]);
 
   // Sort state for main table
-  type StoresSortCol = 'name' | 'area' | 'channel' | 'team' | 'perigeeCode' | 'perigeeName';
+  type StoresSortCol = 'name' | 'area' | 'channel' | 'team' | 'idx' | 'callFreq' | 'perigeeCode' | 'perigeeName';
   const [storesSortCol, setStoresSortCol] = useState<StoresSortCol>('name');
   const [storesSortDir, setStoresSortDir] = useState<'asc' | 'desc'>('asc');
 
@@ -439,6 +470,8 @@ export default function StoresPage() {
     { key: 'area', label: 'Area', defaultWidth: 130 },
     { key: 'channel', label: 'Channel', defaultWidth: 130 },
     { key: 'team', label: 'Team', defaultWidth: 120 },
+    { key: 'idx', label: 'Idx', defaultWidth: 50 },
+    { key: 'callFreq', label: 'Call Frequency', defaultWidth: 140 },
     { key: 'perigeeCode', label: 'Perigee Code', defaultWidth: 130 },
     { key: 'perigeeName', label: 'Perigee Name', defaultWidth: 180 },
   ];
@@ -507,6 +540,8 @@ export default function StoresPage() {
         case 'area': aVal = a.area; bVal = b.area; break;
         case 'channel': aVal = nameMap[`ch:${a.channelId}`] || ''; bVal = nameMap[`ch:${b.channelId}`] || ''; break;
         case 'team': aVal = nameMap[`tm:${a.teamId}`] || ''; bVal = nameMap[`tm:${b.teamId}`] || ''; break;
+        case 'idx': aVal = a.callCycleIndex || ''; bVal = b.callCycleIndex || ''; break;
+        case 'callFreq': aVal = a.callCycleIndex ? (INDEX_TO_DESCRIPTION[a.callCycleIndex] || '') : ''; bVal = b.callCycleIndex ? (INDEX_TO_DESCRIPTION[b.callCycleIndex] || '') : ''; break;
         case 'perigeeCode': aVal = a.perigeeStoreCode; bVal = b.perigeeStoreCode; break;
         case 'perigeeName': aVal = a.perigeeStoreName || ''; bVal = b.perigeeStoreName || ''; break;
       }
@@ -629,6 +664,46 @@ export default function StoresPage() {
     } catch { setBravoMsg('Connection error'); setBravoMsgType('error'); }
     finally { setBravoUploading(false); }
   }
+
+  async function handleCycleUpload(file: File) {
+    setCycleUploading(true); setCycleMsg(''); setCycleMsgType('');
+    try {
+      const fd = new FormData(); fd.append('file', file);
+      const res = await authFetch('/api/stores/upload-call-cycles', { method: 'POST', body: fd });
+      const data = await res.json();
+      if (!res.ok) { setCycleMsg(data.error || 'Upload failed'); setCycleMsgType('error'); }
+      else {
+        setCycleMsg(`${data.matched} stores matched, ${data.unmatched} unmatched (${data.sheetsProcessed} sheets)`);
+        setCycleMsgType('success'); reload();
+      }
+    } catch { setCycleMsg('Connection error'); setCycleMsgType('error'); }
+    finally { setCycleUploading(false); }
+  }
+
+  async function handleCycleChange(storeId: string, newIndex: string | undefined) {
+    setEditingCycleId(null);
+    // Optimistic update
+    setStores(prev => prev.map(s => s.id === storeId ? { ...s, callCycleIndex: newIndex } : s));
+    try {
+      await authFetch(`/api/stores/${storeId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ callCycleIndex: newIndex || '' }),
+      });
+    } catch { reload(); } // revert on failure
+  }
+
+  // Close cycle dropdown on click outside
+  useEffect(() => {
+    if (!editingCycleId) return;
+    function handleClickOutside(e: MouseEvent) {
+      if (cycleDropdownRef.current && !cycleDropdownRef.current.contains(e.target as Node)) {
+        setEditingCycleId(null);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [editingCycleId]);
 
   // Clear handlers
   async function handleClearStores() {
@@ -795,7 +870,7 @@ export default function StoresPage() {
         {isAdmin && (
           <div className="mb-6">
             <h2 className="text-sm font-bold text-[var(--color-navy)] mb-3">Data Uploads</h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <DropZone
                 title="Bravo + Perigee Store Matcher"
                 description="Upload the master store match file with pre-matched Perigee codes"
@@ -841,9 +916,43 @@ export default function StoresPage() {
                 hasData={totalStores > 0}
                 clearing={clearingStores}
               />
+              <DropZone
+                title="Call Cycle Index"
+                description="Upload Excel with store call cycle indexes (A–R)"
+                accept=".xlsx,.xls"
+                uploading={cycleUploading}
+                message={cycleMsg}
+                messageType={cycleMsgType}
+                onFile={handleCycleUpload}
+              />
             </div>
           </div>
         )}
+
+        {/* Call Cycle Legend */}
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden mb-4">
+          <div
+            className="px-4 py-2.5 flex items-center gap-2 cursor-pointer select-none hover:bg-gray-50 transition-colors"
+            onClick={() => setLegendCollapsed(c => !c)}
+          >
+            <svg className={`w-3.5 h-3.5 text-gray-400 transition-transform ${legendCollapsed ? '' : 'rotate-90'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+            <span className="text-xs font-bold text-[var(--color-navy)]">Call Cycle Index Key</span>
+          </div>
+          {!legendCollapsed && (
+            <div className="px-4 pb-3 grid grid-cols-4 gap-x-4 gap-y-1.5">
+              {CALL_CYCLE_KEY.map(entry => (
+                <div key={entry.index} className="flex items-center gap-2 text-xs">
+                  <span className={`inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-bold text-white ${cycleIndexColor(entry.index)}`}>
+                    {entry.index}
+                  </span>
+                  <span className="text-gray-600">{entry.description}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
 
         {/* Filter bar */}
         <div className="bg-white rounded-xl border border-gray-200 p-4 mb-4 flex flex-wrap gap-3 items-end">
@@ -852,6 +961,14 @@ export default function StoresPage() {
             <select value={filterChannel} onChange={e => setFilterChannel(e.target.value)} className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm bg-white">
               <option value="">All</option>
               {channels.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
+          <div className="min-w-[140px]">
+            <label className="block text-xs font-medium text-gray-500 mb-1">Call Cycle</label>
+            <select value={filterCycle} onChange={e => setFilterCycle(e.target.value)} className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm bg-white">
+              <option value="">All</option>
+              <option value="__none__">No Cycle Set</option>
+              {CALL_CYCLE_KEY.map(e => <option key={e.index} value={e.index}>{e.index} — {e.description}</option>)}
             </select>
           </div>
           <div className="min-w-[130px]">
@@ -918,10 +1035,42 @@ export default function StoresPage() {
                           <td className="px-3 py-2 text-gray-600 truncate" style={{ width: storeColWidths[1] }}>{s.area}</td>
                           <td className="px-3 py-2 truncate" style={{ width: storeColWidths[2] }}>{nameMap[`ch:${s.channelId}`] || '—'}</td>
                           <td className="px-3 py-2 truncate" style={{ width: storeColWidths[3] }}>{nameMap[`tm:${s.teamId}`] || '—'}</td>
-                          <td className={`px-3 py-2 truncate ${isEmailSent ? 'text-amber-500 font-medium' : isUnmapped ? 'text-red-500 font-medium' : 'font-mono text-xs'}`} style={{ width: storeColWidths[4] }}>
+                          <td className="px-3 py-1 relative" style={{ width: storeColWidths[4] }}
+                            onClick={e => { e.stopPropagation(); setEditingCycleId(editingCycleId === s.id ? null : s.id); }}
+                          >
+                            {s.callCycleIndex ? (
+                              <span className={`inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-bold text-white cursor-pointer ${cycleIndexColor(s.callCycleIndex)}`}>
+                                {s.callCycleIndex}
+                              </span>
+                            ) : (
+                              <span className="text-gray-300 cursor-pointer text-xs">—</span>
+                            )}
+                            {editingCycleId === s.id && (
+                              <div ref={cycleDropdownRef} className="absolute z-20 top-full left-0 mt-0.5 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[200px]" onClick={e => e.stopPropagation()}>
+                                <button
+                                  className="w-full text-left px-3 py-1.5 text-xs text-gray-400 hover:bg-gray-50"
+                                  onClick={() => handleCycleChange(s.id, undefined)}
+                                >Clear</button>
+                                {CALL_CYCLE_KEY.map(entry => (
+                                  <button
+                                    key={entry.index}
+                                    className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50 flex items-center gap-2 ${s.callCycleIndex === entry.index ? 'font-bold text-[var(--color-navy)]' : 'text-gray-700'}`}
+                                    onClick={() => handleCycleChange(s.id, entry.index)}
+                                  >
+                                    <span className={`inline-flex items-center justify-center w-4 h-4 rounded text-[9px] font-bold text-white ${cycleIndexColor(entry.index)}`}>{entry.index}</span>
+                                    {entry.description}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-xs text-gray-600 truncate" style={{ width: storeColWidths[5] }}>
+                            {s.callCycleIndex ? (INDEX_TO_DESCRIPTION[s.callCycleIndex] || '—') : '—'}
+                          </td>
+                          <td className={`px-3 py-2 truncate ${isEmailSent ? 'text-amber-500 font-medium' : isUnmapped ? 'text-red-500 font-medium' : 'font-mono text-xs'}`} style={{ width: storeColWidths[6] }}>
                             {isEmailSent ? 'Email Sent' : s.perigeeStoreCode}
                           </td>
-                          <td className="px-3 py-2 text-gray-600 text-xs truncate" style={{ width: storeColWidths[5] }}>{s.perigeeStoreName || '—'}</td>
+                          <td className="px-3 py-2 text-gray-600 text-xs truncate" style={{ width: storeColWidths[7] }}>{s.perigeeStoreName || '—'}</td>
                           <td className="px-3 py-2" style={{ width: 90 }}>
                             <div className="flex items-center gap-1.5">
                               {isJustMapped ? (

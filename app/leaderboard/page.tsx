@@ -3,12 +3,11 @@
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { useAuth, authFetch } from '@/lib/useAuth';
 import Sidebar from '@/components/Sidebar';
+import { resolveStoreRate } from '@/lib/frequency';
 
 interface Team { id: string; name: string; iconKey: string | null }
-interface StoreRow { id: string; perigeeStoreCode: string; teamId: string; channelId: string }
+interface StoreRow { id: string; perigeeStoreCode: string; teamId: string; channelId: string; callCycleIndex?: string }
 interface ChannelRow { id: string; name: string; targetFrequency?: string }
-
-const FREQ_RATE: Record<string, number> = { weekly: 4, monthly_3: 3, monthly_2: 2, monthly_1: 1, bimonthly: 0.5, quarterly: 0.333, biannual: 0.167, annual: 0.083 };
 
 const COLUMNS = [
   { key: 'rank', label: 'Rank', defaultWidth: 70 },
@@ -110,19 +109,15 @@ export default function LeaderboardPage() {
       });
       const visits = teamStores.reduce((sum, s) => sum + (visitMap[s.perigeeStoreCode] || 0), 0);
 
-      // Calculate target % for this team
+      // Calculate target % for this team using per-store frequency resolution
       let targetTotal = 0;
       let targetedVisits = 0;
       let hasTarget = false;
-      channels.forEach(ch => {
-        const freq = ch.targetFrequency;
-        if (!freq) return;
-        const rate = FREQ_RATE[freq];
-        if (rate === undefined) return;
-        const teamChStores = teamStores.filter(s => s.channelId === ch.id);
-        if (teamChStores.length > 0) {
-          targetTotal += teamChStores.length * rate * monthsInRange;
-          targetedVisits += teamChStores.reduce((sum, s) => sum + (visitMap[s.perigeeStoreCode] || 0), 0);
+      teamStores.forEach(s => {
+        const rate = resolveStoreRate(s.callCycleIndex, channelFreqMap[s.channelId]);
+        if (rate !== undefined && rate > 0) {
+          targetTotal += rate * monthsInRange;
+          targetedVisits += visitMap[s.perigeeStoreCode] || 0;
           hasTarget = true;
         }
       });
@@ -133,7 +128,7 @@ export default function LeaderboardPage() {
     .filter(r => r.total > 0 || stores.some(s => s.teamId === r.team.id))
     .sort((a, b) => b.total - a.total)
     .map((row, i) => ({ ...row, rank: i + 1 }));
-  }, [teams, stores, channels, visitMap, filterChannel, monthsInRange]);
+  }, [teams, stores, channels, visitMap, filterChannel, monthsInRange, channelFreqMap]);
 
   // Totals row
   const totals = useMemo(() => {
@@ -142,30 +137,24 @@ export default function LeaderboardPage() {
     const promo = rows.reduce((sum, r) => sum + r.promo, 0);
     const total = rows.reduce((sum, r) => sum + r.total, 0);
 
-    // Overall target %
+    // Overall target % using per-store frequency resolution
     const mappedStores = stores.filter(s => s.perigeeStoreCode !== 'Not Mapped');
     let targetTotal = 0;
     let targetedVisits = 0;
     let hasTarget = false;
-    channels.forEach(ch => {
-      const freq = ch.targetFrequency;
-      if (!freq) return;
-      const rate = FREQ_RATE[freq];
-      if (rate === undefined) return;
-      const chStores = mappedStores.filter(s => {
-        if (filterChannel && s.channelId !== filterChannel) return false;
-        return s.channelId === ch.id;
-      });
-      if (chStores.length > 0) {
-        targetTotal += chStores.length * rate * monthsInRange;
-        targetedVisits += chStores.reduce((sum, s) => sum + (visitMap[s.perigeeStoreCode] || 0), 0);
+    mappedStores.forEach(s => {
+      if (filterChannel && s.channelId !== filterChannel) return;
+      const rate = resolveStoreRate(s.callCycleIndex, channelFreqMap[s.channelId]);
+      if (rate !== undefined && rate > 0) {
+        targetTotal += rate * monthsInRange;
+        targetedVisits += visitMap[s.perigeeStoreCode] || 0;
         hasTarget = true;
       }
     });
     const targetPct = hasTarget && targetTotal > 0 ? Math.round((targetedVisits / targetTotal) * 100) : undefined;
 
     return { visits, targetPct, displayMaintenance, promo, total };
-  }, [rows, stores, channels, visitMap, filterChannel, monthsInRange]);
+  }, [rows, stores, channels, visitMap, filterChannel, monthsInRange, channelFreqMap]);
 
   // Resize handlers
   function handleResizeStart(e: React.MouseEvent, colIdx: number) {

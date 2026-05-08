@@ -3,24 +3,13 @@
 import { useEffect, useState, useRef } from 'react';
 import { useAuth, authFetch } from '@/lib/useAuth';
 import Sidebar from '@/components/Sidebar';
+import { CHANNEL_FREQ_OPTIONS, FREQ_LABELS } from '@/lib/frequency';
 
 interface ChannelRow { id: string; name: string; targetFrequency?: string; createdAt: string }
 
-const FREQ_OPTIONS: { value: string; label: string }[] = [
-  { value: '', label: 'None' },
-  { value: 'weekly', label: 'Weekly' },
-  { value: 'monthly_3', label: '3\u00d7 per Month' },
-  { value: 'monthly_2', label: 'Twice a Month' },
-  { value: 'monthly_1', label: 'Once a Month' },
-  { value: 'bimonthly', label: 'Every 2nd Month' },
-  { value: 'quarterly', label: 'Once a Quarter' },
-  { value: 'biannual', label: 'Twice a Year' },
-  { value: 'annual', label: 'Annual' },
-];
-
 function freqLabel(val?: string): string {
   if (!val) return '\u2014';
-  return FREQ_OPTIONS.find(o => o.value === val)?.label || val;
+  return FREQ_LABELS[val] || val;
 }
 
 const COLUMNS = [
@@ -171,7 +160,7 @@ export default function ChannelsPage() {
                     onChange={e => setFormFreq(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[var(--color-navy)]"
                   >
-                    {FREQ_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    {CHANNEL_FREQ_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
                 </div>
                 {error && <div className="text-red-600 text-sm">{error}</div>}

@@ -24,6 +24,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     if (body.perigeeStoreCode !== undefined) stores[idx].perigeeStoreCode = body.perigeeStoreCode;
     if (body.perigeeStoreName !== undefined) stores[idx].perigeeStoreName = body.perigeeStoreName;
     if (body.supportEmailSent !== undefined) stores[idx].supportEmailSent = body.supportEmailSent;
+    if (body.callCycleIndex !== undefined) stores[idx].callCycleIndex = body.callCycleIndex || undefined;
 
     await saveStores(stores);
     return NextResponse.json(stores[idx], { headers: noCacheHeaders() });

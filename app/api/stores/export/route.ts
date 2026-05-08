@@ -5,6 +5,7 @@ import { loadChannels } from '@/lib/channelData';
 import { loadTeams } from '@/lib/teamData';
 import { loadRegions } from '@/lib/regionData';
 import { requireLogin } from '@/lib/auth';
+import { INDEX_TO_DESCRIPTION } from '@/lib/frequency';
 
 export const dynamic = 'force-dynamic';
 
@@ -34,7 +35,7 @@ export async function GET(req: Request) {
   if (type === 'template-bravo') {
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet([
-      ['Store Name', 'Area', 'Channel', 'Region', 'Team'],
+      ['Store Name', 'Area', 'Channel', 'Region', 'Team', 'Call Cycle Index'],
     ]);
     XLSX.utils.book_append_sheet(wb, ws, 'Stores');
     const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
@@ -93,11 +94,13 @@ export async function GET(req: Request) {
       teamMap.get(s.teamId) || '',
       s.perigeeStoreCode,
       s.perigeeStoreName,
+      s.callCycleIndex || '',
+      s.callCycleIndex ? (INDEX_TO_DESCRIPTION[s.callCycleIndex] || '') : '',
     ]);
 
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet([
-      ['Store Name', 'Area', 'Channel', 'Region', 'Team', 'Perigee Code', 'Perigee Name'],
+      ['Store Name', 'Area', 'Channel', 'Region', 'Team', 'Perigee Code', 'Perigee Name', 'Call Cycle Index', 'Call Frequency'],
       ...rows,
     ]);
     XLSX.utils.book_append_sheet(wb, ws, 'Stores');

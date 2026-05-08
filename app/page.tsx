@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { useAuth, authFetch, Session } from '@/lib/useAuth';
 import Sidebar from '@/components/Sidebar';
+import { FREQ_RATE, FREQ_LABELS, MONTHLY_FREQS, resolveStoreFrequency, resolveStoreRate } from '@/lib/frequency';
 
 interface StoreRow {
   id: string;
@@ -14,6 +15,7 @@ interface StoreRow {
   repUserId: string | null;
   perigeeStoreCode: string;
   perigeeStoreName: string;
+  callCycleIndex?: string;
 }
 
 interface TeamRow { id: string; name: string }
@@ -372,12 +374,6 @@ export default function DashboardPage() {
   const mappedStores = useMemo(() => stores.filter(s => s.perigeeStoreCode !== 'Not Mapped'), [stores]);
   const mapped = mappedStores.length;
 
-  // Frequency → monthly rate
-  const FREQ_RATE: Record<string, number> = { weekly: 4, monthly_3: 3, monthly_2: 2, monthly_1: 1, bimonthly: 0.5, quarterly: 0.333, biannual: 0.167, annual: 0.083 };
-
-  // Monthly frequencies (≥1 visit/month expected)
-  const MONTHLY_FREQS = new Set(['weekly', 'monthly_3', 'monthly_2', 'monthly_1']);
-
   // Channel frequency lookup: channelId → targetFrequency
   const channelFreqMap = useMemo(() => {
     const m: Record<string, string> = {};
@@ -387,11 +383,11 @@ export default function DashboardPage() {
 
   // Card computations
   const storesVisited = useMemo(() => mappedStores.filter(s => (visitMap[s.perigeeStoreCode] || 0) > 0).length, [mappedStores, visitMap]);
-  // "Missed (Month)" — only count stores whose channel expects monthly+ visits
+  // "Missed (Month)" — only count stores whose effective frequency expects monthly+ visits
   const storesMissed = useMemo(() => {
     return mappedStores.filter(s => {
-      const freq = channelFreqMap[s.channelId];
-      if (!freq || !MONTHLY_FREQS.has(freq)) return false; // skip less-frequent channels
+      const freq = resolveStoreFrequency(s.callCycleIndex, channelFreqMap[s.channelId]);
+      if (!freq || !MONTHLY_FREQS.has(freq)) return false;
       return (visitMap[s.perigeeStoreCode] || 0) === 0;
     }).length;
   }, [mappedStores, visitMap, channelFreqMap]);
@@ -409,22 +405,22 @@ export default function DashboardPage() {
     return Math.max(1, months);
   }, [dateFrom, dateTo]);
 
-  // Set of store codes that belong to channels WITH a target frequency
+  // Set of store codes that have a target frequency with rate > 0 (excludes G/R)
   const targetStoreCodes = useMemo(() => {
     const codes = new Set<string>();
     mappedStores.forEach(s => {
-      const freq = channelFreqMap[s.channelId];
-      if (freq && FREQ_RATE[freq] !== undefined) codes.add(s.perigeeStoreCode);
+      const rate = resolveStoreRate(s.callCycleIndex, channelFreqMap[s.channelId]);
+      if (rate !== undefined && rate > 0) codes.add(s.perigeeStoreCode);
     });
     return codes;
   }, [mappedStores, channelFreqMap]);
 
-  // Target = monthly rate per store × months in range
+  // Target = monthly rate per store × months in range (per-store resolution, excludes G/R)
   const targetVisits = useMemo(() => {
     let monthlyTotal = 0;
     mappedStores.forEach(s => {
-      const freq = channelFreqMap[s.channelId];
-      if (freq && FREQ_RATE[freq] !== undefined) monthlyTotal += FREQ_RATE[freq];
+      const rate = resolveStoreRate(s.callCycleIndex, channelFreqMap[s.channelId]);
+      if (rate !== undefined && rate > 0) monthlyTotal += rate;
     });
     return Math.round(monthlyTotal * monthsInRange);
   }, [mappedStores, channelFreqMap, monthsInRange]);
@@ -443,9 +439,6 @@ export default function DashboardPage() {
   const channelsWithTarget = useMemo(() => channels.filter(c => c.targetFrequency && FREQ_RATE[c.targetFrequency] !== undefined).length, [channels]);
   const targetPct = targetVisits > 0 ? Math.round((targetedVisits / targetVisits) * 100) : 0;
 
-  // Frequency display labels
-  const FREQ_LABELS: Record<string, string> = { weekly: 'Weekly', monthly_3: '3x/Month', monthly_2: '2x/Month', monthly_1: 'Monthly', bimonthly: 'Bimonthly', quarterly: 'Quarterly', biannual: 'Biannual', annual: 'Annual' };
-
   // Channel performance grid data
   const channelPerf = useMemo(() => {
     return channels.map(ch => {
@@ -458,12 +451,23 @@ export default function DashboardPage() {
       const seen2Plus = chStores.filter(s => (visitMap[s.perigeeStoreCode] || 0) > 2).length;
       const freq = (ch as ChannelRow).targetFrequency;
       const freqLabel = freq ? (FREQ_LABELS[freq] || freq) : '\u2014';
-      const rate = freq ? FREQ_RATE[freq] : undefined;
-      const target = rate !== undefined ? Math.round(chStores.length * rate * monthsInRange) : undefined;
-      const pct = target !== undefined && target > 0 ? Math.round((visits / target) * 100) : undefined;
+      // Aggregate target per store (store-level override takes precedence)
+      let target = 0;
+      let targetedVisitsCount = 0;
+      let hasAnyTarget = false;
+      chStores.forEach(s => {
+        const rate = resolveStoreRate(s.callCycleIndex, freq);
+        if (rate !== undefined && rate > 0) {
+          target += rate * monthsInRange;
+          targetedVisitsCount += visitMap[s.perigeeStoreCode] || 0;
+          hasAnyTarget = true;
+        }
+      });
+      const roundedTarget = Math.round(target);
+      const pct = hasAnyTarget && roundedTarget > 0 ? Math.round((targetedVisitsCount / roundedTarget) * 100) : undefined;
       return { id: ch.id, name: ch.name, freqLabel, storeCount: chStores.length, visits, totalSeen, missed, seenTM, seenTQTR, seen2Plus, pct };
     }).filter(c => c.storeCount > 0);
-  }, [channels, mappedStores, visitMap, monthVisitMap, quarterVisitMap, monthsInRange]);
+  }, [channels, mappedStores, visitMap, monthVisitMap, quarterVisitMap, monthsInRange, channelFreqMap]);
 
   // Team performance grid data
   const teamPerf = useMemo(() => {
@@ -475,27 +479,22 @@ export default function DashboardPage() {
       const seenTM = tmStores.filter(s => (monthVisitMap[s.perigeeStoreCode] || 0) > 0).length;
       const seenTQTR = tmStores.filter(s => (quarterVisitMap[s.perigeeStoreCode] || 0) > 0).length;
       const seen2Plus = tmStores.filter(s => (visitMap[s.perigeeStoreCode] || 0) > 2).length;
-      // Aggregate target across channels × months in range
-      // Only count visits from stores whose channel has a target (fair comparison)
+      // Aggregate target per store using store-level frequency resolution
       let totalTarget = 0;
       let targetedVisitsCount = 0;
       let hasAnyTarget = false;
-      channels.forEach(ch => {
-        const freq = (ch as ChannelRow).targetFrequency;
-        if (!freq) return;
-        const rate = FREQ_RATE[freq];
-        if (rate === undefined) return;
-        const teamChStores = tmStores.filter(s => s.channelId === ch.id);
-        if (teamChStores.length > 0) {
-          totalTarget += teamChStores.length * rate * monthsInRange;
-          targetedVisitsCount += teamChStores.reduce((sum, s) => sum + (visitMap[s.perigeeStoreCode] || 0), 0);
+      tmStores.forEach(s => {
+        const rate = resolveStoreRate(s.callCycleIndex, channelFreqMap[s.channelId]);
+        if (rate !== undefined && rate > 0) {
+          totalTarget += rate * monthsInRange;
+          targetedVisitsCount += visitMap[s.perigeeStoreCode] || 0;
           hasAnyTarget = true;
         }
       });
       const pct = hasAnyTarget && totalTarget > 0 ? Math.round((targetedVisitsCount / totalTarget) * 100) : undefined;
       return { id: tm.id, name: tm.name, storeCount: tmStores.length, visits, totalSeen, missed, seenTM, seenTQTR, seen2Plus, pct };
     }).filter(t => t.storeCount > 0);
-  }, [teams, channels, mappedStores, visitMap, monthVisitMap, quarterVisitMap, monthsInRange]);
+  }, [teams, mappedStores, visitMap, monthVisitMap, quarterVisitMap, monthsInRange, channelFreqMap]);
 
   // Rep performance grid data
   const repPerf = useMemo(() => {
@@ -516,20 +515,15 @@ export default function DashboardPage() {
       const teamName = user.teamIds && user.teamIds.length > 0
         ? user.teamIds.map(tid => nameMap[`team:${tid}`]).filter(Boolean).join(', ') || '\u2014'
         : '\u2014';
-      // Aggregate target across channels
-      // Only count visits from stores whose channel has a target (fair comparison)
+      // Aggregate target per store using store-level frequency resolution
       let totalTarget = 0;
       let targetedVisitsCount = 0;
       let hasAnyTarget = false;
-      channels.forEach(ch => {
-        const freq = (ch as ChannelRow).targetFrequency;
-        if (!freq) return;
-        const rate = FREQ_RATE[freq];
-        if (rate === undefined) return;
-        const repChStores = repStores.filter(s => s.channelId === ch.id);
-        if (repChStores.length > 0) {
-          totalTarget += repChStores.length * rate * monthsInRange;
-          targetedVisitsCount += repChStores.reduce((sum, s) => sum + (visitMap[s.perigeeStoreCode] || 0), 0);
+      repStores.forEach(s => {
+        const rate = resolveStoreRate(s.callCycleIndex, channelFreqMap[s.channelId]);
+        if (rate !== undefined && rate > 0) {
+          totalTarget += rate * monthsInRange;
+          targetedVisitsCount += visitMap[s.perigeeStoreCode] || 0;
           hasAnyTarget = true;
         }
       });
@@ -548,7 +542,7 @@ export default function DashboardPage() {
         pct,
       };
     }).filter(Boolean) as { id: string; name: string; teamName: string; storeCount: number; visits: number; totalSeen: number; missed: number; seenTM: number; seenTQTR: number; seen2Plus: number; pct: number | undefined }[];
-  }, [mappedStores, users, visitMap, monthVisitMap, quarterVisitMap, channels, nameMap, monthsInRange]);
+  }, [mappedStores, users, visitMap, monthVisitMap, quarterVisitMap, channelFreqMap, nameMap, monthsInRange]);
 
   // Sort handler
   function handleSort(col: SortCol) {

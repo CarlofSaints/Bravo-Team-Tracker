@@ -11,6 +11,7 @@ export interface Store {
   perigeeStoreCode: string;
   perigeeStoreName: string;
   supportEmailSent?: boolean;
+  callCycleIndex?: string;
   createdAt: string;
 }
 

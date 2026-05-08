@@ -47,6 +47,7 @@ export async function POST(req: Request) {
       repUserId: body.repUserId || null,
       perigeeStoreCode: 'Not Mapped',
       perigeeStoreName: '',
+      callCycleIndex: body.callCycleIndex || undefined,
       createdAt: new Date().toISOString(),
     };
     stores.push(newStore);
