@@ -96,11 +96,12 @@ export async function GET(req: Request) {
       s.perigeeStoreName,
       s.callCycleIndex || '',
       s.callCycleIndex ? (INDEX_TO_DESCRIPTION[s.callCycleIndex] || '') : '',
+      s.callCycleIndex ? 'Defined' : 'Adopted',
     ]);
 
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet([
-      ['Store Name', 'Area', 'Channel', 'Region', 'Team', 'Perigee Code', 'Perigee Name', 'Call Cycle Index', 'Call Frequency'],
+      ['Store Name', 'Area', 'Channel', 'Region', 'Team', 'Perigee Code', 'Perigee Name', 'Call Cycle Index', 'Call Frequency', 'Freq. Source'],
       ...rows,
     ]);
     XLSX.utils.book_append_sheet(wb, ws, 'Stores');

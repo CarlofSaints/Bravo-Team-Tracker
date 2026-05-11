@@ -65,23 +65,65 @@ export async function POST(req: Request) {
         if (!row || !Array.isArray(row)) continue;
 
         let foundStore = -1;
+        let foundArea = -1;
         let foundIndex = -1;
 
         for (let c = 0; c < row.length; c++) {
           const cell = String(row[c] || '').trim();
           if (!cell) continue;
           if (matchesAny(cell, STORE_PATTERNS) && foundStore === -1) foundStore = c;
-          if (matchesAny(cell, AREA_PATTERNS) && areaCol === -1) areaCol = c;
+          if (matchesAny(cell, AREA_PATTERNS) && foundArea === -1) foundArea = c;
           if (matchesAny(cell, INDEX_PATTERNS) && foundIndex === -1) foundIndex = c;
         }
+
+        if (foundArea !== -1 && areaCol === -1) areaCol = foundArea;
 
         if (foundStore !== -1 && foundIndex !== -1) {
           headerRowIdx = r;
           storeCol = foundStore;
           indexCol = foundIndex;
-          // areaCol may still be -1 if not found, that's okay
           break;
         }
+
+        // Fallback: if we found area + index but no store column header,
+        // assume the column before area (or col 0) is the store column
+        if (foundStore === -1 && foundIndex !== -1 && foundArea !== -1) {
+          headerRowIdx = r;
+          storeCol = foundArea > 0 ? foundArea - 1 : 0;
+          if (storeCol === foundIndex) storeCol = 0; // avoid collision
+          indexCol = foundIndex;
+          areaCol = foundArea;
+          break;
+        }
+      }
+
+      // Fallback: if we found store + area columns but no index column header,
+      // sniff data rows for a column where most values are single A-R letters
+      if (headerRowIdx !== -1 && storeCol !== -1 && indexCol === -1) {
+        const usedCols = new Set([storeCol, areaCol]);
+        const totalCols = (rawRows[headerRowIdx] as unknown[])?.length || 0;
+        let bestCol = -1;
+        let bestHits = 0;
+
+        for (let c = 0; c < totalCols; c++) {
+          if (usedCols.has(c)) continue;
+          let hits = 0;
+          let nonEmpty = 0;
+          for (let r = headerRowIdx + 1; r < Math.min(headerRowIdx + 20, rawRows.length); r++) {
+            const row = rawRows[r] as unknown[];
+            if (!row) continue;
+            const val = String(row[c] || '').trim().toUpperCase();
+            if (!val) continue;
+            nonEmpty++;
+            if (val.length === 1 && VALID_INDEXES.has(val)) hits++;
+          }
+          if (nonEmpty >= 3 && hits / nonEmpty >= 0.5 && hits > bestHits) {
+            bestCol = c;
+            bestHits = hits;
+          }
+        }
+
+        if (bestCol !== -1) indexCol = bestCol;
       }
 
       if (headerRowIdx === -1 || storeCol === -1 || indexCol === -1) continue;

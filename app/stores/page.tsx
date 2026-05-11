@@ -342,6 +342,7 @@ export default function StoresPage() {
   const [filterChannel, setFilterChannel] = useState('');
   const [filterStatus, setFilterStatus] = useState<'' | 'mapped' | 'unmapped' | 'email_sent'>('');
   const [filterCycle, setFilterCycle] = useState('');
+  const [filterFreqSource, setFilterFreqSource] = useState('');
 
   // Inline call cycle editor
   const [editingCycleId, setEditingCycleId] = useState<string | null>(null);
@@ -440,6 +441,8 @@ export default function StoresPage() {
       if (filterStatus === 'email_sent' && !(s.perigeeStoreCode === 'Not Mapped' && s.supportEmailSent)) return false;
       if (filterCycle === '__none__' && s.callCycleIndex) return false;
       if (filterCycle && filterCycle !== '__none__' && s.callCycleIndex !== filterCycle) return false;
+      if (filterFreqSource === 'defined' && !s.callCycleIndex) return false;
+      if (filterFreqSource === 'adopted' && s.callCycleIndex) return false;
       if (search) {
         const q = search.trim().toLowerCase();
         if (!q) return true;
@@ -457,10 +460,10 @@ export default function StoresPage() {
       }
       return true;
     });
-  }, [stores, filterChannel, filterStatus, filterCycle, search, nameMap]);
+  }, [stores, filterChannel, filterStatus, filterCycle, filterFreqSource, search, nameMap]);
 
   // Sort state for main table
-  type StoresSortCol = 'name' | 'area' | 'channel' | 'team' | 'idx' | 'callFreq' | 'perigeeCode' | 'perigeeName';
+  type StoresSortCol = 'name' | 'area' | 'channel' | 'team' | 'idx' | 'callFreq' | 'freqSource' | 'perigeeCode' | 'perigeeName';
   const [storesSortCol, setStoresSortCol] = useState<StoresSortCol>('name');
   const [storesSortDir, setStoresSortDir] = useState<'asc' | 'desc'>('asc');
 
@@ -472,6 +475,7 @@ export default function StoresPage() {
     { key: 'team', label: 'Team', defaultWidth: 120 },
     { key: 'idx', label: 'Idx', defaultWidth: 50 },
     { key: 'callFreq', label: 'Call Frequency', defaultWidth: 140 },
+    { key: 'freqSource', label: 'Freq. Source', defaultWidth: 100 },
     { key: 'perigeeCode', label: 'Perigee Code', defaultWidth: 130 },
     { key: 'perigeeName', label: 'Perigee Name', defaultWidth: 180 },
   ];
@@ -542,6 +546,7 @@ export default function StoresPage() {
         case 'team': aVal = nameMap[`tm:${a.teamId}`] || ''; bVal = nameMap[`tm:${b.teamId}`] || ''; break;
         case 'idx': aVal = a.callCycleIndex || ''; bVal = b.callCycleIndex || ''; break;
         case 'callFreq': aVal = a.callCycleIndex ? (INDEX_TO_DESCRIPTION[a.callCycleIndex] || '') : ''; bVal = b.callCycleIndex ? (INDEX_TO_DESCRIPTION[b.callCycleIndex] || '') : ''; break;
+        case 'freqSource': aVal = a.callCycleIndex ? 'Defined' : 'Adopted'; bVal = b.callCycleIndex ? 'Defined' : 'Adopted'; break;
         case 'perigeeCode': aVal = a.perigeeStoreCode; bVal = b.perigeeStoreCode; break;
         case 'perigeeName': aVal = a.perigeeStoreName || ''; bVal = b.perigeeStoreName || ''; break;
       }
@@ -971,6 +976,14 @@ export default function StoresPage() {
               {CALL_CYCLE_KEY.map(e => <option key={e.index} value={e.index}>{e.index} — {e.description}</option>)}
             </select>
           </div>
+          <div className="min-w-[120px]">
+            <label className="block text-xs font-medium text-gray-500 mb-1">Freq. Source</label>
+            <select value={filterFreqSource} onChange={e => setFilterFreqSource(e.target.value)} className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm bg-white">
+              <option value="">All</option>
+              <option value="defined">Defined</option>
+              <option value="adopted">Adopted</option>
+            </select>
+          </div>
           <div className="min-w-[130px]">
             <label className="block text-xs font-medium text-gray-500 mb-1">Status</label>
             <select value={filterStatus} onChange={e => setFilterStatus(e.target.value as typeof filterStatus)} className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm bg-white">
@@ -1067,10 +1080,17 @@ export default function StoresPage() {
                           <td className="px-3 py-2 text-xs text-gray-600 truncate" style={{ width: storeColWidths[5] }}>
                             {s.callCycleIndex ? (INDEX_TO_DESCRIPTION[s.callCycleIndex] || '—') : '—'}
                           </td>
-                          <td className={`px-3 py-2 truncate ${isEmailSent ? 'text-amber-500 font-medium' : isUnmapped ? 'text-red-500 font-medium' : 'font-mono text-xs'}`} style={{ width: storeColWidths[6] }}>
+                          <td className="px-3 py-2 text-xs truncate" style={{ width: storeColWidths[6] }}>
+                            {s.callCycleIndex ? (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-100 text-blue-700">Defined</span>
+                            ) : (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-gray-100 text-gray-500">Adopted</span>
+                            )}
+                          </td>
+                          <td className={`px-3 py-2 truncate ${isEmailSent ? 'text-amber-500 font-medium' : isUnmapped ? 'text-red-500 font-medium' : 'font-mono text-xs'}`} style={{ width: storeColWidths[7] }}>
                             {isEmailSent ? 'Email Sent' : s.perigeeStoreCode}
                           </td>
-                          <td className="px-3 py-2 text-gray-600 text-xs truncate" style={{ width: storeColWidths[7] }}>{s.perigeeStoreName || '—'}</td>
+                          <td className="px-3 py-2 text-gray-600 text-xs truncate" style={{ width: storeColWidths[8] }}>{s.perigeeStoreName || '—'}</td>
                           <td className="px-3 py-2" style={{ width: 90 }}>
                             <div className="flex items-center gap-1.5">
                               {isJustMapped ? (
