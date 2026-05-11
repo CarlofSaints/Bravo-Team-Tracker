@@ -1013,9 +1013,9 @@ export default function StoresPage() {
           <div className="text-center text-gray-400 py-12">Loading stores...</div>
         ) : (
           <div className="bg-white rounded-xl border border-gray-200 overflow-hidden mb-6">
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto max-h-[70vh] overflow-y-auto">
               <table className="text-sm" style={{ tableLayout: 'fixed', width: storeColWidths.reduce((a, b) => a + b, 0) + 90 }}>
-                <thead>
+                <thead className="sticky top-0 z-10">
                   <tr className="bg-[var(--color-navy)] text-white text-left">
                     {STORE_COLS.map((col, idx) => (
                       <th
