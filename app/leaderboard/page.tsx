@@ -8,6 +8,7 @@ import { resolveStoreRate } from '@/lib/frequency';
 interface Team { id: string; name: string; iconKey: string | null }
 interface StoreRow { id: string; perigeeStoreCode: string; teamId: string; channelId: string; callCycleIndex?: string }
 interface ChannelRow { id: string; name: string; targetFrequency?: string }
+interface TrainingRow { visitUUID: string; baName: string; date: string; didComplete: boolean }
 
 const COLUMNS = [
   { key: 'rank', label: 'Rank', defaultWidth: 70 },
@@ -39,6 +40,7 @@ export default function LeaderboardPage() {
   const [stores, setStores] = useState<StoreRow[]>([]);
   const [channels, setChannels] = useState<ChannelRow[]>([]);
   const [visitMap, setVisitMap] = useState<Record<string, number>>({});
+  const [trainingRecords, setTrainingRecords] = useState<TrainingRow[]>([]);
   const [fetching, setFetching] = useState(true);
 
   // Filters
@@ -65,6 +67,9 @@ export default function LeaderboardPage() {
     }).catch(() => setFetching(false));
   }, [session]);
 
+  // Derive selected month from dateFrom (YYYY-MM)
+  const selectedMonth = useMemo(() => dateFrom ? dateFrom.slice(0, 7) : '', [dateFrom]);
+
   // Fetch visits when dates change
   const fetchVisits = useCallback(() => {
     const params = new URLSearchParams();
@@ -76,10 +81,21 @@ export default function LeaderboardPage() {
       .catch(() => {});
   }, [dateFrom, dateTo]);
 
+  // Fetch training data when month changes
+  const fetchTraining = useCallback(() => {
+    const params = new URLSearchParams({ data: '1' });
+    if (selectedMonth) params.set('month', selectedMonth);
+    authFetch(`/api/training?${params}`, { cache: 'no-store' })
+      .then(r => r.json())
+      .then(data => setTrainingRecords(Array.isArray(data) ? data : []))
+      .catch(() => {});
+  }, [selectedMonth]);
+
   useEffect(() => {
     if (!session) return;
     fetchVisits();
-  }, [session, fetchVisits]);
+    fetchTraining();
+  }, [session, fetchVisits, fetchTraining]);
 
   // How many months does the date range span?
   const monthsInRange = useMemo(() => {
@@ -156,6 +172,32 @@ export default function LeaderboardPage() {
     return { visits, targetPct, displayMaintenance, promo, total };
   }, [rows, stores, channels, visitMap, filterChannel, monthsInRange, channelFreqMap]);
 
+  // Training KPI stats
+  const trainingStats = useMemo(() => {
+    const completed = trainingRecords.filter(r => r.didComplete);
+    // Dedupe by visitUUID
+    const seen = new Set<string>();
+    const unique = completed.filter(r => {
+      if (seen.has(r.visitUUID)) return false;
+      seen.add(r.visitUUID);
+      return true;
+    });
+    const count = unique.length;
+
+    // Top trainer: BA with most completed trainings
+    const baCounts: Record<string, number> = {};
+    for (const r of unique) {
+      if (r.baName) baCounts[r.baName] = (baCounts[r.baName] || 0) + 1;
+    }
+    let topTrainer = '';
+    let topCount = 0;
+    for (const [name, c] of Object.entries(baCounts)) {
+      if (c > topCount) { topTrainer = name; topCount = c; }
+    }
+
+    return { count, topTrainer };
+  }, [trainingRecords]);
+
   // Resize handlers
   function handleResizeStart(e: React.MouseEvent, colIdx: number) {
     e.preventDefault();
@@ -209,6 +251,17 @@ export default function LeaderboardPage() {
           <div className="min-w-[130px]">
             <label className="block text-xs font-medium text-gray-500 mb-1">To</label>
             <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="w-full px-3 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-[var(--color-navy)]" />
+          </div>
+        </div>
+
+        {/* Training KPI Card */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+          <div className="bg-white rounded-xl border border-gray-200 p-4">
+            <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">Trainings Completed</div>
+            <div className="mt-1 text-2xl font-bold text-[var(--color-navy)]">{trainingStats.count}</div>
+            {trainingStats.topTrainer && (
+              <div className="mt-1 text-xs text-gray-500 truncate">Top: {trainingStats.topTrainer}</div>
+            )}
           </div>
         </div>
 
